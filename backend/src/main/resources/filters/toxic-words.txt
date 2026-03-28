@@ -1,0 +1,80 @@
+# Toxic Words - These words trigger IMMEDIATE NEGATIVE classification
+# One toxic word = NEGATIVE, regardless of positive words in the message
+# Format: one word/phrase per line, lowercase
+
+# English profanity
+fuck
+fucking
+fucked
+fucker
+fucks
+shit
+shitty
+bullshit
+bitch
+bitches
+ass
+asshole
+bastard
+damn
+damnit
+crap
+piss
+dick
+cock
+pussy
+whore
+slut
+cunt
+
+# Slurs (extreme - highest priority)
+nigger
+nigga
+faggot
+fag
+retard
+retarded
+spic
+chink
+kike
+
+# Violence/threats
+kill
+murder
+die
+death
+stab
+shoot
+rape
+bomb
+terrorist
+attack
+
+# Harassment
+stupid
+idiot
+moron
+dumb
+loser
+pathetic
+worthless
+useless
+trash
+garbage
+scum
+disgust
+
+# Bulgarian profanity
+майка ти
+мамка му
+путка
+курва
+педераст
+педал
+глупак
+задник
+шибан
+проклет
+дърт
+кучи син
+копеле

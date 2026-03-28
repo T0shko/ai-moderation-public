@@ -1,0 +1,12 @@
+# Sensitive Subjects Filter File
+# One phrase per line
+# Lines starting with # are comments
+# Subjects often used in slurs but are neutral on their own
+
+# Bulgarian phrases (Latin transliteration)
+maika ti
+bashta ti
+
+# Bulgarian phrases (Cyrillic)
+майка ти
+баща ти

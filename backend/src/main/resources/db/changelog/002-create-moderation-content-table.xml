@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd">
+
+    <changeSet id="002-create-comments-table" author="system">
+        <createTable tableName="comment">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="content" type="text">
+                <constraints nullable="true"/>
+            </column>
+            <column name="user_id" type="bigint">
+                <constraints nullable="true"/>
+            </column>
+            <column name="sentiment" type="varchar(20)">
+                <constraints nullable="true"/>
+            </column>
+            <column name="confidence_score" type="double precision">
+                <constraints nullable="true"/>
+            </column>
+            <column name="status" type="varchar(20)">
+                <constraints nullable="true"/>
+            </column>
+            <column name="created_at" type="timestamp">
+                <constraints nullable="true"/>
+            </column>
+        </createTable>
+
+        <!-- Create foreign key constraint -->
+        <addForeignKeyConstraint
+            baseTableName="comment"
+            baseColumnNames="user_id"
+            referencedTableName="users"
+            referencedColumnNames="id"
+            constraintName="fk_comment_user_id"/>
+
+        <!-- Create indexes for better performance -->
+        <createIndex indexName="idx_comment_user_id" tableName="comment">
+            <column name="user_id"/>
+        </createIndex>
+        <createIndex indexName="idx_comment_status" tableName="comment">
+            <column name="status"/>
+        </createIndex>
+        <createIndex indexName="idx_comment_created_at" tableName="comment">
+            <column name="created_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

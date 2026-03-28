@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd">
+
+    <changeSet id="006-create-image-moderation-table" author="system">
+        <createTable tableName="image_moderation_result">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="image_url" type="varchar(1024)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="image_hash" type="varchar(64)">
+                <constraints unique="true"/>
+            </column>
+            <column name="status" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="confidence_score" type="double precision"/>
+            <column name="detected_categories" type="text"/>
+            <column name="moderation_reason" type="varchar(1024)"/>
+            <column name="user_id" type="bigint"/>
+            <column name="created_at" type="timestamp"/>
+            <column name="moderated_at" type="timestamp"/>
+        </createTable>
+
+        <!-- Add foreign key to users table -->
+        <addForeignKeyConstraint
+            baseTableName="image_moderation_result"
+            baseColumnNames="user_id"
+            referencedTableName="users"
+            referencedColumnNames="id"
+            constraintName="fk_image_moderation_user"/>
+
+        <!-- Create indexes for faster lookups -->
+        <createIndex indexName="idx_image_mod_hash" tableName="image_moderation_result">
+            <column name="image_hash"/>
+        </createIndex>
+        <createIndex indexName="idx_image_mod_status" tableName="image_moderation_result">
+            <column name="status"/>
+        </createIndex>
+        <createIndex indexName="idx_image_mod_user" tableName="image_moderation_result">
+            <column name="user_id"/>
+        </createIndex>
+        <createIndex indexName="idx_image_mod_created" tableName="image_moderation_result">
+            <column name="created_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd">
+
+    <changeSet id="004-create-ai-settings-table" author="system">
+        <createTable tableName="ai_settings">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="threshold" type="double precision" defaultValueNumeric="0.7">
+                <constraints nullable="false"/>
+            </column>
+            <column name="active_model" type="varchar(100)" defaultValue="basic-v1">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_update" type="timestamp"/>
+        </createTable>
+
+        <insert tableName="ai_settings">
+            <column name="threshold" valueNumeric="0.7"/>
+            <column name="active_model" value="basic-v1"/>
+            <column name="last_update" valueDate="now()"/>
+        </insert>
+    </changeSet>
+
+</databaseChangeLog>

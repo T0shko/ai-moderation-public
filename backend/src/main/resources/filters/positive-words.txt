@@ -1,0 +1,40 @@
+# Positive Words Filter File
+# One word/phrase per line
+# Lines starting with # are comments
+# These indicate positive sentiment and have high weight to override neutral-hostile subjects
+
+# English positive words
+good
+love
+awesome
+great
+excellent
+best
+happy
+wonderful
+cool
+beautiful
+
+# Bulgarian positive words (Latin transliteration)
+hubava
+hubav
+jena
+dobar
+obicham
+super
+yako
+bravo
+hubavo
+qko
+
+# Bulgarian positive words (Cyrillic)
+добър
+обичам
+супер
+яко
+браво
+отличен
+щастлив
+красива
+хубава
+жена

@@ -1,0 +1,27 @@
+# Negative Indicators Filter File
+# One word/phrase per line
+# Lines starting with # are comments
+# These indicate negative sentiment
+
+# English negative words
+bad
+hate
+terrible
+stupid
+idiot
+worst
+kill
+die
+
+# Bulgarian negative words (Cyrillic)
+тъп
+глупав
+мразя
+убий
+умри
+
+# Bulgarian negative words (Latin transliteration)
+tap
+tup
+glupav
+mrazq
