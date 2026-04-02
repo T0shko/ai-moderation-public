@@ -1,7 +1,9 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
-/// Modern surface card with clean borders and optional gradient accent
+/// Card with warm tonal accent and subtle border
 class SurfaceCard extends StatelessWidget {
   final Widget child;
   final double? width;
@@ -10,6 +12,7 @@ class SurfaceCard extends StatelessWidget {
   final EdgeInsetsGeometry margin;
   final double borderRadius;
   final Color? backgroundColor;
+  final Color? accentColor;
   final Gradient? accentGradient;
   final bool showBorder;
   final VoidCallback? onTap;
@@ -23,6 +26,7 @@ class SurfaceCard extends StatelessWidget {
     this.margin = EdgeInsets.zero,
     this.borderRadius = AppTheme.radiusLg,
     this.backgroundColor,
+    this.accentColor,
     this.accentGradient,
     this.showBorder = true,
     this.onTap,
@@ -30,11 +34,12 @@ class SurfaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasAccent = accentColor != null || accentGradient != null;
+
     Widget card = Container(
       width: width,
       height: height,
       margin: margin,
-      padding: padding,
       decoration: BoxDecoration(
         color: backgroundColor ?? AppTheme.bgSecondary,
         borderRadius: BorderRadius.circular(borderRadius),
@@ -42,32 +47,26 @@ class SurfaceCard extends StatelessWidget {
             ? Border.all(color: AppTheme.borderDefault, width: 1)
             : null,
       ),
-      child: child,
+      child: hasAccent
+          ? IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    width: 4,
+                    margin: EdgeInsets.symmetric(vertical: borderRadius * 0.6),
+                    decoration: BoxDecoration(
+                      color: accentColor,
+                      gradient: accentGradient,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Expanded(child: Padding(padding: padding, child: child)),
+                ],
+              ),
+            )
+          : Padding(padding: padding, child: child),
     );
-
-    if (accentGradient != null) {
-      card = Container(
-        margin: margin,
-        decoration: BoxDecoration(
-          gradient: accentGradient,
-          borderRadius: BorderRadius.circular(borderRadius),
-        ),
-        child: Container(
-          margin: const EdgeInsets.only(left: 3),
-          padding: padding,
-          decoration: BoxDecoration(
-            color: backgroundColor ?? AppTheme.bgSecondary,
-            borderRadius: BorderRadius.only(
-              topRight: Radius.circular(borderRadius),
-              bottomRight: Radius.circular(borderRadius),
-              topLeft: Radius.circular(borderRadius - 3),
-              bottomLeft: Radius.circular(borderRadius - 3),
-            ),
-          ),
-          child: child,
-        ),
-      );
-    }
 
     if (onTap != null) {
       return GestureDetector(onTap: onTap, child: card);
@@ -76,7 +75,7 @@ class SurfaceCard extends StatelessWidget {
   }
 }
 
-/// Gradient-filled action button with loading state
+/// Gradient-filled action button
 class ActionButton extends StatelessWidget {
   final String text;
   final VoidCallback? onPressed;
@@ -97,32 +96,27 @@ class ActionButton extends StatelessWidget {
     this.gradient,
     this.backgroundColor,
     this.width = double.infinity,
-    this.height = 52,
+    this.height = 54,
     this.borderRadius = AppTheme.radiusMd,
   });
 
   @override
   Widget build(BuildContext context) {
+    final effectiveGradient = gradient ?? AppTheme.primaryGradient;
+    final isEnabled = onPressed != null && !isLoading;
+
     return GestureDetector(
-      onTap: isLoading ? null : onPressed,
+      onTap: isEnabled ? onPressed : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         width: width,
         height: height,
         decoration: BoxDecoration(
-          gradient: onPressed != null
-              ? (gradient ?? AppTheme.primaryGradient)
-              : null,
-          color: onPressed == null ? AppTheme.bgTertiary : backgroundColor,
+          gradient: isEnabled ? effectiveGradient : null,
+          color: isEnabled ? null : AppTheme.bgTertiary,
           borderRadius: BorderRadius.circular(borderRadius),
-          boxShadow: onPressed != null
-              ? [
-                  BoxShadow(
-                    color: AppTheme.primary.withValues(alpha: 0.3),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ]
+          boxShadow: isEnabled
+              ? AppTheme.glow(effectiveGradient.colors.first, 0.25)
               : null,
         ),
         child: Center(
@@ -145,8 +139,8 @@ class ActionButton extends StatelessWidget {
                     ],
                     Text(
                       text,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: GoogleFonts.dmSans(
+                        color: isEnabled ? Colors.white : AppTheme.textTertiary,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -159,7 +153,7 @@ class ActionButton extends StatelessWidget {
   }
 }
 
-/// Modern text input field
+/// Text input
 class AppTextField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
@@ -195,7 +189,7 @@ class AppTextField extends StatelessWidget {
       maxLines: maxLines,
       autofocus: autofocus,
       onSubmitted: onSubmitted,
-      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15),
+      style: GoogleFonts.dmSans(color: AppTheme.textPrimary, fontSize: 15),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
@@ -206,41 +200,48 @@ class AppTextField extends StatelessWidget {
   }
 }
 
-/// Status badge / chip
+/// Status badge
 class StatusBadge extends StatelessWidget {
   final String text;
   final Color color;
   final IconData? icon;
+  final bool showPulse;
 
   const StatusBadge({
     super.key,
     required this.text,
     required this.color,
     this.icon,
+    this.showPulse = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusRound),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
-            Icon(icon, color: color, size: 14),
-            const SizedBox(width: 4),
+          if (showPulse) ...[
+            _PulseDot(color: color),
+            const SizedBox(width: 6),
+          ],
+          if (icon != null && !showPulse) ...[
+            Icon(icon, color: color, size: 13),
+            const SizedBox(width: 5),
           ],
           Text(
             text,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+            style: GoogleFonts.dmSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
               color: color,
+              letterSpacing: 0.5,
             ),
           ),
         ],
@@ -249,7 +250,59 @@ class StatusBadge extends StatelessWidget {
   }
 }
 
-/// Icon button with surface background
+class _PulseDot extends StatefulWidget {
+  final Color color;
+  const _PulseDot({required this.color});
+
+  @override
+  State<_PulseDot> createState() => _PulseDotState();
+}
+
+class _PulseDotState extends State<_PulseDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, child) {
+        final pulse = (math.sin(_ctrl.value * math.pi * 2) + 1) / 2;
+        return Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            color: widget.color,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withValues(alpha: 0.5 * pulse),
+                blurRadius: 6 * pulse,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Icon button
 class AppIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onPressed;
@@ -264,7 +317,7 @@ class AppIconButton extends StatelessWidget {
     required this.onPressed,
     this.color,
     this.backgroundColor,
-    this.size = 40,
+    this.size = 42,
     this.tooltip,
   });
 
@@ -295,7 +348,7 @@ class AppIconButton extends StatelessWidget {
   }
 }
 
-/// Section header with optional action
+/// Section header
 class SectionHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -311,27 +364,36 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         children: [
+          Container(
+            width: 4,
+            height: 28,
+            decoration: BoxDecoration(
+              gradient: AppTheme.primaryGradient,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                     color: AppTheme.textPrimary,
                   ),
                 ),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     subtitle!,
-                    style: const TextStyle(
-                      fontSize: 13,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12,
                       color: AppTheme.textTertiary,
                     ),
                   ),
@@ -346,7 +408,7 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
-/// Stat display widget for dashboards
+/// Stat tile
 class StatTile extends StatelessWidget {
   final String value;
   final String label;
@@ -365,7 +427,7 @@ class StatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: SurfaceCard(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -373,15 +435,16 @@ class StatTile extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
+                color: color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                border: Border.all(color: color.withValues(alpha: 0.2)),
               ),
               child: Icon(icon, color: color, size: 18),
             ),
             const SizedBox(height: 12),
             Text(
               value,
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
                 color: color,
@@ -390,8 +453,8 @@ class StatTile extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              style: const TextStyle(
-                fontSize: 12,
+              style: GoogleFonts.dmSans(
+                fontSize: 11,
                 color: AppTheme.textTertiary,
               ),
             ),
@@ -402,7 +465,59 @@ class StatTile extends StatelessWidget {
   }
 }
 
-// Keep GlassContainer as alias for backwards compatibility during migration
+/// Warm ambient background
+class NexusBackground extends StatelessWidget {
+  final Widget child;
+
+  const NexusBackground({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // Warm ambient glow top-right
+        Positioned(
+          top: -80,
+          right: -60,
+          child: Container(
+            width: 260,
+            height: 260,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  AppTheme.coral.withValues(alpha: 0.06),
+                  AppTheme.coral.withValues(alpha: 0.0),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // Warm ambient glow bottom-left
+        Positioned(
+          bottom: -50,
+          left: -50,
+          child: Container(
+            width: 220,
+            height: 220,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  AppTheme.amber.withValues(alpha: 0.05),
+                  AppTheme.amber.withValues(alpha: 0.0),
+                ],
+              ),
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+// Keep aliases for backwards compatibility
 typedef GlassContainer = SurfaceCard;
 typedef GlassButton = ActionButton;
 typedef GlassTextField = AppTextField;

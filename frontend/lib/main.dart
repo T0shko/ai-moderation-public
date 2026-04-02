@@ -17,7 +17,7 @@ void main() {
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: AppTheme.bgPrimary,
+      systemNavigationBarColor: AppTheme.bgDeep,
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
@@ -39,7 +39,8 @@ class MyApp extends StatelessWidget {
       title: 'AI Moderation',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: const LoginScreen(),
+      navigatorKey: ApiService.navigatorKey,
+      home: const _AuthGate(),
       routes: {
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),
@@ -48,6 +49,59 @@ class MyApp extends StatelessWidget {
         '/admin': (context) => const AdminDashboard(),
         '/chat': (context) => const AiChatScreen(),
         '/settings': (context) => const SettingsScreen(),
+      },
+    );
+  }
+}
+
+/// Checks for a valid stored session on cold start.
+/// If a token + roles exist, skip login and go straight to the right screen.
+/// Otherwise show the login screen.
+class _AuthGate extends StatelessWidget {
+  const _AuthGate();
+
+  @override
+  Widget build(BuildContext context) {
+    final api = Provider.of<ApiService>(context, listen: false);
+    return FutureBuilder<String?>(
+      future: api.getToken(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            backgroundColor: AppTheme.bgDeep,
+            body: Center(
+              child: CircularProgressIndicator(color: AppTheme.coral),
+            ),
+          );
+        }
+
+        final token = snapshot.data;
+        if (token == null || token.isEmpty) {
+          return const LoginScreen();
+        }
+
+        // Token exists – resolve destination from roles
+        return FutureBuilder<List<String>>(
+          future: api.getRoles(),
+          builder: (ctx, roleSnap) {
+            if (roleSnap.connectionState != ConnectionState.done) {
+              return const Scaffold(
+                backgroundColor: AppTheme.bgDeep,
+                body: Center(
+                  child: CircularProgressIndicator(color: AppTheme.coral),
+                ),
+              );
+            }
+            final roles = roleSnap.data ?? [];
+            if (roles.contains('ROLE_ADMIN')) {
+              return const AdminDashboard();
+            } else if (roles.contains('ROLE_MODERATOR')) {
+              return const ModeratorDashboard();
+            } else {
+              return const UserHomeScreen();
+            }
+          },
+        );
       },
     );
   }

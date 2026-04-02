@@ -15,6 +15,10 @@ import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import com.example.aimoderation.repository.CommentRepository;
+import com.example.aimoderation.model.Comment;
+import com.example.aimoderation.model.CommentStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * AI Chat Service using FREE models only:
@@ -49,20 +53,23 @@ public class AiChatService {
     // Simple conversation memory per user (last 10 messages)
     private final ConcurrentHashMap<String, List<Message>> conversationHistory = new ConcurrentHashMap<>();
 
+    @Autowired
+    private CommentRepository commentRepository;
+
     // OpenNLP components
     private SimpleTokenizer tokenizer;
     private SentenceDetectorME sentenceDetector;
 
-    // Knowledge base for moderation-related questions
+    // Knowledge base for moderation-related questions — conversational style
     private static final Map<String, String> KNOWLEDGE_BASE = Map.ofEntries(
-            Map.entry("moderation", "Content moderation uses AI to detect harmful content including hate speech, violence, spam, and explicit material. Our system uses an ensemble of models for maximum accuracy."),
-            Map.entry("sentiment", "Sentiment analysis classifies text as POSITIVE, NEUTRAL, or NEGATIVE. We use a multi-phase approach: toxic word detection, learned patterns, negative indicators, and positive word scoring."),
-            Map.entry("image", "Image moderation uses a 3-layer ensemble: Claude Vision for semantic understanding, HuggingFace for NSFW/object detection, and a local spatial grid algorithm for pixel-level analysis."),
-            Map.entry("ensemble", "Ensemble learning combines multiple models for better accuracy. If ANY model flags content, it goes for human review. This reduces false negatives at the cost of slightly more manual reviews."),
-            Map.entry("nlp", "Natural Language Processing (NLP) includes tokenization, sentence detection, sentiment analysis, and named entity recognition. We use OpenNLP for local processing and HuggingFace for AI-powered analysis."),
-            Map.entry("help", "I can help you understand content moderation, sentiment analysis, image recognition, NLP concepts, and how to use this application. Just ask me anything!"),
-            Map.entry("toxic", "Toxic content detection uses word filters, leet-speak normalization, obfuscation detection, and learned patterns from moderator decisions. Even one toxic word triggers flagging regardless of context."),
-            Map.entry("safety", "Content safety involves multiple layers: automated AI detection, confidence scoring, human moderator review for edge cases, and continuous learning from moderator decisions.")
+            Map.entry("moderation", "So content moderation is basically how we keep things safe around here. We use AI to catch harmful stuff like hate speech, violence, spam, and explicit content. The cool part is we don't rely on just one model — we run an ensemble of them together, so if one misses something, another catches it."),
+            Map.entry("sentiment", "Sentiment analysis is how we figure out the \"mood\" behind a message. We look at whether text feels positive, neutral, or negative using multiple signals — toxic word detection, learned patterns from past decisions, negative indicators, and positive word scoring. It all gets combined into a confidence score."),
+            Map.entry("image", "For images, we run a 2-layer analysis. First, HuggingFace's CLIP model does zero-shot classification to detect things like NSFW content, weapons, violence, etc. Then our custom local algorithm breaks the image into a spatial grid and analyzes pixel patterns — skin tones, blood-red areas, dark silhouettes, and text overlays. If either layer flags something, the image gets reviewed."),
+            Map.entry("ensemble", "Our ensemble approach is all about \"better safe than sorry.\" We run multiple models on every piece of content, and if ANY one of them flags it, it goes to a human moderator. Sure, it means a few extra manual reviews, but it dramatically reduces the chance of harmful content slipping through."),
+            Map.entry("nlp", "We use Natural Language Processing for things like breaking text into tokens, detecting sentence boundaries, and extracting keywords. OpenNLP handles the local processing, and HuggingFace adds an AI-powered layer on top. Together they help us understand not just what words are used, but the intent behind them."),
+            Map.entry("help", "Happy to help! I know a lot about content moderation, sentiment analysis, image recognition, and NLP. You can also ask me about recent posts in the community or how specific features work. What's on your mind?"),
+            Map.entry("toxic", "Toxic content detection is pretty thorough. We use word filters that can see through tricks like leet-speak (e.g., \"h4te\") and character substitution. We also learn from moderator decisions over time. The rule is strict: even a single toxic word gets the content flagged, because context can be hard to judge automatically."),
+            Map.entry("safety", "Content safety here works in layers. First, AI scans everything automatically and assigns confidence scores. High-confidence violations get blocked right away. Edge cases go to human moderators for review. And the system keeps learning from those moderator decisions, so it gets smarter over time.")
     );
 
     @PostConstruct
@@ -197,9 +204,18 @@ public class AiChatService {
                     if ("user".equals(msg.role)) pastUserInputs.add(msg.content);
                     else generatedResponses.add(msg.content);
                 }
-                // Keep last 5 turns for context
                 if (pastUserInputs.size() > 5) pastUserInputs = pastUserInputs.subList(pastUserInputs.size() - 5, pastUserInputs.size());
                 if (generatedResponses.size() > 5) generatedResponses = generatedResponses.subList(generatedResponses.size() - 5, generatedResponses.size());
+
+                // Inject feed awareness
+                if (message.toLowerCase().contains("post") || message.toLowerCase().contains("feed") || message.toLowerCase().contains("comment")) {
+                    List<Comment> recent = commentRepository.findByStatus(CommentStatus.APPROVED);
+                    if (!recent.isEmpty()) {
+                        String recentPosts = recent.stream().sorted(Comparator.comparing(Comment::getCreatedAt).reversed()).limit(3)
+                             .map(c -> c.getContent()).collect(Collectors.joining(" | "));
+                        inputs.put("text", message + " (Context: Recent posts are: " + recentPosts + ")");
+                    }
+                }
 
                 inputs.put("past_user_inputs", pastUserInputs);
                 inputs.put("generated_responses", generatedResponses);
@@ -304,6 +320,20 @@ public class AiChatService {
     }
 
     private String generateNlpResponse(String message, NlpAnalysis analysis) {
+        String msgLower = message.toLowerCase();
+
+        // Let AI know about recent approved posts if requested
+        if (msgLower.contains("post") || msgLower.contains("feed") || msgLower.contains("comment") || msgLower.contains("recent") || msgLower.contains("approve")) {
+            List<Comment> recent = commentRepository.findByStatus(CommentStatus.APPROVED);
+            if (!recent.isEmpty()) {
+                StringBuilder sb = new StringBuilder("Here's what's been happening in the community lately:\n\n");
+                recent.stream().sorted(Comparator.comparing(Comment::getCreatedAt).reversed()).limit(3).forEach(c -> {
+                    sb.append("  \u2022 ").append(c.getAuthor().getUsername()).append(": \"").append(c.getContent()).append("\"\n");
+                });
+                return sb.toString();
+            }
+        }
+
         // Check knowledge base for relevant topics
         String lowerMessage = message.toLowerCase();
         List<String> matchedTopics = new ArrayList<>();
@@ -319,27 +349,42 @@ public class AiChatService {
 
         // Handle based on intent
         switch (analysis.intent) {
-            case "greeting" -> response.append("Hello! I'm your AI moderation assistant. I can help you understand content moderation, sentiment analysis, image recognition, and NLP concepts. What would you like to know?");
-            case "gratitude" -> response.append("You're welcome! Feel free to ask if you have more questions about moderation or AI.");
+            case "greeting" -> {
+                String[] greetings = {
+                    "Hey there! I'm the AI moderation assistant. I can walk you through how moderation works, explain sentiment analysis, or chat about image recognition. What are you curious about?",
+                    "Hi! Good to see you. I'm here to help with anything related to content moderation, AI analysis, or how this platform works. What would you like to know?",
+                    "Hello! I'm your moderation assistant. Feel free to ask me about how we keep content safe, how sentiment analysis works, or anything else on your mind."
+                };
+                response.append(greetings[new Random().nextInt(greetings.length)]);
+            }
+            case "gratitude" -> {
+                String[] thanks = {
+                    "Glad I could help! Let me know if anything else comes up.",
+                    "Anytime! Don't hesitate to ask if you have more questions.",
+                    "You're welcome! I'm always here if you need more info."
+                };
+                response.append(thanks[new Random().nextInt(thanks.length)]);
+            }
             case "help_request" -> {
-                response.append("I'm here to help! Here's what I can assist with:\n\n");
-                response.append("- Content moderation concepts and how our system works\n");
-                response.append("- Sentiment analysis and how text is classified\n");
-                response.append("- Image recognition and our 3-layer detection system\n");
-                response.append("- NLP (Natural Language Processing) features\n");
-                response.append("- How the ensemble model combines multiple AI systems\n\n");
-                response.append("Just ask me about any of these topics!");
+                response.append("Of course! Here's what I can help with:\n\n");
+                response.append("  \u2022 How content moderation works and our AI pipeline\n");
+                response.append("  \u2022 Sentiment analysis — how we classify text tone\n");
+                response.append("  \u2022 Image recognition and our detection layers\n");
+                response.append("  \u2022 NLP features and how text is processed\n");
+                response.append("  \u2022 Recent posts and community activity\n\n");
+                response.append("Just ask away!");
             }
             default -> {
                 if (!matchedTopics.isEmpty()) {
                     response.append(String.join("\n\n", matchedTopics));
                 } else {
-                    response.append("I analyzed your message (").append(analysis.tokens.size())
-                            .append(" tokens, ").append(analysis.sentenceCount).append(" sentence(s)). ");
-                    if (!analysis.keywords.isEmpty()) {
-                        response.append("Key topics: ").append(String.join(", ", analysis.keywords)).append(". ");
-                    }
-                    response.append("\n\nI'm specialized in content moderation topics. Try asking about: moderation, sentiment analysis, image recognition, NLP, or how our ensemble system works.");
+                    // Friendly fallback — no robotic token counts
+                    String[] fallbacks = {
+                        "That's an interesting question! I'm mainly focused on content moderation and AI analysis topics. Try asking me about how moderation works, sentiment analysis, image recognition, or what's happening in the community feed.",
+                        "I'm not sure I have a great answer for that one — my expertise is in content moderation and AI safety. You could ask me about how our ensemble system works, how images are analyzed, or what the latest community posts look like.",
+                        "Hmm, that's a bit outside my wheelhouse. I know a lot about moderation, sentiment analysis, image detection, and NLP though. Want to explore any of those?"
+                    };
+                    response.append(fallbacks[new Random().nextInt(fallbacks.length)]);
                 }
             }
         }
@@ -356,27 +401,26 @@ public class AiChatService {
                 && !hfResponse.contains("not configured")
                 && !hfResponse.contains("trouble connecting");
 
-        StringBuilder combined = new StringBuilder();
+        // If we have a good NLP knowledge-base response, prefer it (more relevant)
+        boolean nlpHasSubstance = nlpResponse != null
+                && !nlpResponse.contains("outside my wheelhouse")
+                && !nlpResponse.contains("interesting question");
 
-        // If we got a good HuggingFace response, lead with it
-        if (hfAvailable && hfResponse.length() > 10) {
-            combined.append(hfResponse);
-        }
-
-        // Always add NLP-enriched knowledge base content if relevant
-        if (nlpResponse != null && !nlpResponse.contains("I analyzed your message")) {
-            if (combined.length() > 0) {
-                combined.append("\n\n---\n\n");
+        if (nlpHasSubstance) {
+            // Knowledge base response is relevant — use it, optionally enriched by HF
+            if (hfAvailable && hfResponse.length() > 20) {
+                return nlpResponse + "\n\nBy the way — " + hfResponse;
             }
-            combined.append(nlpResponse);
+            return nlpResponse;
         }
 
-        if (combined.isEmpty()) {
-            return nlpResponse != null ? nlpResponse :
-                    "I'm your AI moderation assistant. Ask me about content moderation, sentiment analysis, or image recognition!";
+        // Fall back to HuggingFace if NLP didn't have a knowledge-base match
+        if (hfAvailable && hfResponse.length() > 10) {
+            return hfResponse;
         }
 
-        return combined.toString();
+        return nlpResponse != null ? nlpResponse :
+                "Hey! I'm your AI moderation assistant. Ask me about content moderation, sentiment analysis, image recognition, or what's happening in the community!";
     }
 
     // =========================================================================

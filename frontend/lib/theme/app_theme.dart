@@ -1,95 +1,112 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Aurora Design System - Clean, modern, bold
-/// Replaces the old glassmorphism theme with a fresh 2025 aesthetic
+/// PRISM Design System — Warm Editorial Interface
+/// Charcoal blacks with amber/coral accents, editorial typography
 class AppTheme {
-  // Brand colors - Aurora palette
-  static const Color aurora1 = Color(0xFF6C5CE7);
-  static const Color aurora2 = Color(0xFF0984E3);
-  static const Color aurora3 = Color(0xFF00B894);
-  static const Color aurora4 = Color(0xFFE17055);
+  // ── Signature palette ──────────────────────────────────────────
+  static const Color coral = Color(0xFFFF6B6B);
+  static const Color amber = Color(0xFFFFAB40);
+  static const Color peach = Color(0xFFFFCC80);
+  static const Color mint = Color(0xFF66BB6A);
+  static const Color sky = Color(0xFF42A5F5);
+  static const Color plum = Color(0xFFAB47BC);
+  static const Color slate = Color(0xFF78909C);
 
-  // Primary palette
-  static const Color primary = Color(0xFF6C5CE7);
-  static const Color primaryLight = Color(0xFFA29BFE);
-  static const Color primaryDark = Color(0xFF4A3DB5);
+  // Primary
+  static const Color primary = coral;
+  static const Color primaryLight = Color(0xFFFF8A80);
+  static const Color primaryDark = Color(0xFFE53935);
 
-  // Semantic colors
-  static const Color success = Color(0xFF00B894);
-  static const Color warning = Color(0xFFFDAE5A);
-  static const Color error = Color(0xFFFF6B6B);
-  static const Color info = Color(0xFF74B9FF);
+  // Accent
+  static const Color accent = amber;
+  static const Color accentLight = Color(0xFFFFD180);
 
-  // Neutrals - dark mode
-  static const Color bgPrimary = Color(0xFF0D1117);
-  static const Color bgSecondary = Color(0xFF161B22);
-  static const Color bgTertiary = Color(0xFF21262D);
-  static const Color bgElevated = Color(0xFF1C2128);
-  static const Color borderDefault = Color(0xFF30363D);
-  static const Color borderMuted = Color(0xFF21262D);
+  // Semantic
+  static const Color success = mint;
+  static const Color warning = amber;
+  static const Color error = Color(0xFFEF5350);
+  static const Color info = sky;
 
-  // Text colors
-  static const Color textPrimary = Color(0xFFF0F6FC);
-  static const Color textSecondary = Color(0xFF8B949E);
-  static const Color textTertiary = Color(0xFF6E7681);
-  static const Color textLink = Color(0xFF58A6FF);
+  // Backgrounds — warm charcoal
+  static const Color bgDeep = Color(0xFF121212);
+  static const Color bgPrimary = Color(0xFF1A1A1A);
+  static const Color bgSecondary = Color(0xFF222222);
+  static const Color bgTertiary = Color(0xFF2C2C2C);
+  static const Color bgElevated = Color(0xFF333333);
 
-  // Gradients
+  // Borders
+  static const Color borderDefault = Color(0xFF383838);
+  static const Color borderMuted = Color(0xFF2A2A2A);
+  static const Color borderActive = Color(0xFF4A4A4A);
+
+  // Text
+  static const Color textPrimary = Color(0xFFF5F5F0);
+  static const Color textSecondary = Color(0xFFB0ADA8);
+  static const Color textTertiary = Color(0xFF757370);
+
+  // ── Gradients ──────────────────────────────────────────────────
   static const LinearGradient primaryGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF6C5CE7), Color(0xFF0984E3)],
+    colors: [coral, Color(0xFFFF8A65)],
+  );
+
+  static const LinearGradient accentGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [amber, Color(0xFFFF7043)],
+  );
+
+  static const LinearGradient warmGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [coral, amber, peach],
   );
 
   static const LinearGradient successGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF00B894), Color(0xFF00CEC9)],
+    colors: [mint, Color(0xFF26A69A)],
   );
 
   static const LinearGradient dangerGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFFFF6B6B), Color(0xFFE17055)],
-  );
-
-  static const LinearGradient auroraGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF6C5CE7), Color(0xFF0984E3), Color(0xFF00B894)],
+    colors: [Color(0xFFEF5350), Color(0xFFFF7043)],
   );
 
   static const LinearGradient surfaceGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [Color(0xFF0D1117), Color(0xFF161B22)],
+    colors: [bgPrimary, bgSecondary],
   );
 
-  // Shadows
-  static List<BoxShadow> elevatedShadow = [
+  // ── Shadows ────────────────────────────────────────────────────
+  static List<BoxShadow> glow(Color color, [double intensity = 0.25]) => [
+    BoxShadow(
+      color: color.withValues(alpha: intensity),
+      blurRadius: 20,
+      offset: const Offset(0, 6),
+    ),
+  ];
+
+  static List<BoxShadow> get softShadow => [
     BoxShadow(
       color: Colors.black.withValues(alpha: 0.3),
-      blurRadius: 20,
-      offset: const Offset(0, 8),
+      blurRadius: 16,
+      offset: const Offset(0, 6),
     ),
   ];
 
-  static List<BoxShadow> glowShadow(Color color) => [
-    BoxShadow(
-      color: color.withValues(alpha: 0.4),
-      blurRadius: 24,
-      offset: const Offset(0, 8),
-    ),
-  ];
-
-  // Border radius
+  // ── Radius ─────────────────────────────────────────────────────
   static const double radiusSm = 8;
-  static const double radiusMd = 12;
-  static const double radiusLg = 16;
-  static const double radiusXl = 20;
+  static const double radiusMd = 14;
+  static const double radiusLg = 20;
+  static const double radiusXl = 28;
   static const double radiusRound = 100;
 
+  // ── Theme Data ─────────────────────────────────────────────────
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
@@ -97,8 +114,8 @@ class AppTheme {
       scaffoldBackgroundColor: bgPrimary,
       colorScheme: const ColorScheme.dark(
         primary: primary,
-        secondary: aurora2,
-        tertiary: aurora3,
+        secondary: accent,
+        tertiary: plum,
         surface: bgSecondary,
         error: error,
         onPrimary: Colors.white,
@@ -106,60 +123,14 @@ class AppTheme {
         onSurface: textPrimary,
         outline: borderDefault,
       ),
-      textTheme:
-          GoogleFonts.plusJakartaSansTextTheme(
-            ThemeData.dark().textTheme,
-          ).copyWith(
-            displayLarge: GoogleFonts.plusJakartaSans(
-              fontSize: 36,
-              fontWeight: FontWeight.w800,
-              color: textPrimary,
-              letterSpacing: -1,
-            ),
-            headlineMedium: GoogleFonts.plusJakartaSans(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              color: textPrimary,
-              letterSpacing: -0.5,
-            ),
-            titleLarge: GoogleFonts.plusJakartaSans(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: textPrimary,
-            ),
-            titleMedium: GoogleFonts.plusJakartaSans(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: textPrimary,
-            ),
-            bodyLarge: GoogleFonts.plusJakartaSans(
-              fontSize: 16,
-              fontWeight: FontWeight.w400,
-              color: textSecondary,
-            ),
-            bodyMedium: GoogleFonts.plusJakartaSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-              color: textSecondary,
-            ),
-            bodySmall: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              color: textTertiary,
-            ),
-            labelLarge: GoogleFonts.plusJakartaSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: textPrimary,
-            ),
-          ),
+      textTheme: _buildTextTheme(),
       appBarTheme: AppBarTheme(
         backgroundColor: bgPrimary,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.plusJakartaSans(
-          fontSize: 20,
+        titleTextStyle: GoogleFonts.playfairDisplay(
+          fontSize: 22,
           fontWeight: FontWeight.w700,
           color: textPrimary,
         ),
@@ -169,12 +140,12 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: primary,
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(radiusMd),
           ),
           elevation: 0,
-          textStyle: GoogleFonts.plusJakartaSans(
+          textStyle: GoogleFonts.dmSans(
             fontSize: 15,
             fontWeight: FontWeight.w600,
           ),
@@ -184,11 +155,11 @@ class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: textPrimary,
           side: const BorderSide(color: borderDefault),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(radiusMd),
           ),
-          textStyle: GoogleFonts.plusJakartaSans(
+          textStyle: GoogleFonts.dmSans(
             fontSize: 15,
             fontWeight: FontWeight.w600,
           ),
@@ -197,10 +168,7 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: bgTertiary,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 14,
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusMd),
           borderSide: const BorderSide(color: borderDefault),
@@ -211,14 +179,14 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusMd),
-          borderSide: const BorderSide(color: primary, width: 2),
+          borderSide: const BorderSide(color: primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusMd),
           borderSide: const BorderSide(color: error),
         ),
-        labelStyle: const TextStyle(color: textSecondary),
-        hintStyle: const TextStyle(color: textTertiary),
+        labelStyle: GoogleFonts.dmSans(color: textSecondary, fontSize: 14),
+        hintStyle: GoogleFonts.dmSans(color: textTertiary, fontSize: 14),
         prefixIconColor: textTertiary,
       ),
       cardTheme: CardThemeData(
@@ -232,10 +200,9 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: bgElevated,
-        contentTextStyle: GoogleFonts.plusJakartaSans(color: textPrimary),
+        contentTextStyle: GoogleFonts.dmSans(color: textPrimary, fontSize: 14),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusMd),
-          side: const BorderSide(color: borderDefault),
         ),
         behavior: SnackBarBehavior.floating,
         elevation: 0,
@@ -245,13 +212,6 @@ class AppTheme {
         thickness: 1,
         space: 1,
       ),
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-        backgroundColor: bgSecondary,
-        selectedItemColor: primary,
-        unselectedItemColor: textTertiary,
-        type: BottomNavigationBarType.fixed,
-        elevation: 0,
-      ),
       popupMenuTheme: PopupMenuThemeData(
         color: bgElevated,
         shape: RoundedRectangleBorder(
@@ -259,6 +219,54 @@ class AppTheme {
           side: const BorderSide(color: borderDefault),
         ),
         elevation: 8,
+      ),
+    );
+  }
+
+  static TextTheme _buildTextTheme() {
+    final base = ThemeData.dark().textTheme;
+    return GoogleFonts.dmSansTextTheme(base).copyWith(
+      displayLarge: GoogleFonts.playfairDisplay(
+        fontSize: 42,
+        fontWeight: FontWeight.w700,
+        color: textPrimary,
+        letterSpacing: -1.5,
+      ),
+      headlineMedium: GoogleFonts.playfairDisplay(
+        fontSize: 28,
+        fontWeight: FontWeight.w700,
+        color: textPrimary,
+        letterSpacing: -0.5,
+      ),
+      titleLarge: GoogleFonts.playfairDisplay(
+        fontSize: 22,
+        fontWeight: FontWeight.w600,
+        color: textPrimary,
+      ),
+      titleMedium: GoogleFonts.dmSans(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: textPrimary,
+      ),
+      bodyLarge: GoogleFonts.dmSans(
+        fontSize: 16,
+        fontWeight: FontWeight.w400,
+        color: textSecondary,
+      ),
+      bodyMedium: GoogleFonts.dmSans(
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+        color: textSecondary,
+      ),
+      bodySmall: GoogleFonts.dmSans(
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        color: textTertiary,
+      ),
+      labelLarge: GoogleFonts.dmSans(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: textPrimary,
       ),
     );
   }

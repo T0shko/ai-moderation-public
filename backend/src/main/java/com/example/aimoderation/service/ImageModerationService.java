@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -36,9 +37,6 @@ public class ImageModerationService {
     private HuggingFaceImageService huggingFaceService;
 
     @Autowired
-    private ClaudeImageModerationService claudeImageModerationService;
-
-    @Autowired
     private LocalImageAnalysisService localImageAnalysisService;
 
     @Value("${moderation.image.max-size:10485760}")
@@ -53,56 +51,47 @@ public class ImageModerationService {
     // =========================================================================
 
     public ImageModerationResult moderateImage(MultipartFile file, User uploadedBy) {
-        logger.info("Starting moderation for image: {}", file.getOriginalFilename());
-
-        String validationError = validateFile(file);
-        if (validationError != null) {
-            return buildErrorResult(file.getOriginalFilename(), validationError);
-        }
-
         try {
-            byte[] imageData = file.getBytes();
-            String imageHash = calculateHash(imageData);
-
-            // Short-circuit: hash was previously rejected
-            if (imageModerationRepository.isHashRejected(imageHash)) {
-                logger.warn("Previously rejected hash: {}", imageHash);
-                return buildRejectedResult(file.getOriginalFilename(), imageHash,
-                        "Image matches previously rejected content", 1.0, uploadedBy);
-            }
-
-            // Return cached result if available
-            Optional<ImageModerationResult> cached = imageModerationRepository.findByImageHash(imageHash);
-            if (cached.isPresent()) {
-                logger.info("Cache hit for hash: {}", imageHash);
-                return cached.get();
-            }
-
-            // ── ENSEMBLE ANALYSIS ─────────────────────────────────────────────
-
-            // Layer 1: Claude vision (semantic understanding)
-            ClaudeImageModerationService.ImageModerationResult claudeResult =
-                    claudeImageModerationService.moderateImage(imageData, file.getContentType());
-
-            // Layer 2: HuggingFace (NSFW + object labels)
-            HuggingFaceImageService.ImageAnalysisResult hfResult =
-                    huggingFaceService.analyzeImage(imageData, file.getOriginalFilename());
-
-            // Layer 3: Local custom algorithm (spatial grid pixel matrix)
-            LocalImageAnalysisService.AnalysisResult localResult =
-                    localImageAnalysisService.analyze(imageData);
-
-            // Merge all three into a final decision
-            EnsembleResult ensemble = mergeResults(claudeResult, hfResult, localResult);
-
-            ImageModerationResult result = buildModerationResult(
-                    file.getOriginalFilename(), imageHash, ensemble, uploadedBy);
-            return imageModerationRepository.save(result);
+            return moderateImage(file.getBytes(), file.getOriginalFilename(), file.getContentType(), uploadedBy);
 
         } catch (IOException e) {
             logger.error("Error reading image: {}", e.getMessage());
             return buildErrorResult(file.getOriginalFilename(), "Error reading image: " + e.getMessage());
         }
+    }
+
+    public ImageModerationResult moderateImage(
+            byte[] imageData,
+            String filename,
+            String contentType,
+            User uploadedBy) {
+        String safeFilename = filename != null ? filename : "upload";
+        logger.info("Starting moderation for image: {}", safeFilename);
+
+        String validationError = validateFile(imageData, contentType, safeFilename);
+        if (validationError != null) {
+            return buildErrorResult(safeFilename, validationError);
+        }
+
+        String imageHash = calculateHash(imageData);
+
+        Optional<ImageModerationResult> cached = imageModerationRepository.findByImageHash(imageHash);
+        if (cached.isPresent()) {
+            logger.info("Cache hit for hash: {}", imageHash);
+            return cloneForResponse(cached.get(), safeFilename);
+        }
+
+        HuggingFaceImageService.ImageAnalysisResult hfResult =
+                huggingFaceService.analyzeImage(imageData, safeFilename);
+
+        LocalImageAnalysisService.AnalysisResult localResult =
+                localImageAnalysisService.analyze(imageData);
+
+        EnsembleResult ensemble = mergeResults(hfResult, localResult);
+
+        ImageModerationResult result = buildModerationResult(
+                safeFilename, imageHash, ensemble, uploadedBy);
+        return saveOrReuseExisting(result, safeFilename, imageHash);
     }
 
     public Map<String, Long> getStats() {
@@ -118,27 +107,16 @@ public class ImageModerationService {
     // =========================================================================
 
     /**
-     * Combine Claude, HuggingFace, and local analysis.
+     * Combine HuggingFace and local analysis.
      * Ensemble rule: take the strictest status and union of all categories.
      */
     private EnsembleResult mergeResults(
-            ClaudeImageModerationService.ImageModerationResult claude,
             HuggingFaceImageService.ImageAnalysisResult hf,
             LocalImageAnalysisService.AnalysisResult local) {
 
         List<ImageContentCategory> categories = new ArrayList<>(local.categories());
         StringBuilder reasons = new StringBuilder();
         double maxConfidence = local.confidence();
-
-        // ── Claude contribution ───────────────────────────────────────────────
-        for (String cat : claude.categories()) {
-            ImageContentCategory mapped = mapCategory(cat);
-            if (mapped != null && !categories.contains(mapped)) categories.add(mapped);
-        }
-        if (claude.reason() != null && !claude.reason().isBlank()) {
-            reasons.append("[Claude] ").append(claude.reason()).append(" ");
-        }
-        maxConfidence = Math.max(maxConfidence, claude.confidence());
 
         // ── HuggingFace contribution ──────────────────────────────────────────
         for (String cat : hf.categories()) {
@@ -160,8 +138,7 @@ public class ImageModerationService {
 
         // ── Final status ──────────────────────────────────────────────────────
         ImageModerationStatus status;
-        boolean anyRejected = claude.blocked()
-                || hf.status() == HuggingFaceImageService.ImageAnalysisStatus.REJECTED
+        boolean anyRejected = hf.status() == HuggingFaceImageService.ImageAnalysisStatus.REJECTED
                 || local.status() == ImageModerationStatus.REJECTED;
         boolean anyFlagged  = hf.status() == HuggingFaceImageService.ImageAnalysisStatus.FLAGGED
                 || local.status() == ImageModerationStatus.FLAGGED;
@@ -219,27 +196,76 @@ public class ImageModerationService {
         return result;
     }
 
-    private ImageModerationResult buildRejectedResult(
-            String filename, String hash, String reason, double confidence, User uploadedBy) {
-        ImageModerationResult result = new ImageModerationResult(filename, ImageModerationStatus.REJECTED);
-        result.setImageHash(hash);
-        result.setConfidenceScore(confidence);
-        result.setModerationReason(reason);
-        result.setUploadedBy(uploadedBy);
-        result.setModeratedAt(LocalDateTime.now());
-        return imageModerationRepository.save(result);
+    private ImageModerationResult saveOrReuseExisting(
+            ImageModerationResult result,
+            String requestedFilename,
+            String imageHash) {
+        try {
+            return imageModerationRepository.save(result);
+        } catch (DataIntegrityViolationException e) {
+            logger.warn("Duplicate image hash detected, reusing existing result: {}", imageHash);
+            return imageModerationRepository.findByImageHash(imageHash)
+                    .map(existing -> cloneForResponse(existing, requestedFilename))
+                    .orElseThrow(() -> e);
+        }
+    }
+
+    private ImageModerationResult cloneForResponse(ImageModerationResult source, String requestedFilename) {
+        ImageModerationResult result = new ImageModerationResult(
+                requestedFilename != null ? requestedFilename : source.getImageUrl(),
+                source.getStatus());
+        result.setId(source.getId());
+        result.setImageHash(source.getImageHash());
+        result.setConfidenceScore(source.getConfidenceScore());
+        result.setDetectedCategories(source.getDetectedCategories());
+        result.setModerationReason(source.getModerationReason());
+        result.setUploadedBy(source.getUploadedBy());
+        result.setCreatedAt(source.getCreatedAt());
+        result.setModeratedAt(source.getModeratedAt());
+        return result;
     }
 
     // =========================================================================
     // UTILITIES
     // =========================================================================
 
-    private String validateFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) return "No file provided";
-        if (!ALLOWED_FORMATS.contains(file.getContentType()))
+    private String validateFile(byte[] imageData, String contentType, String filename) {
+        if (imageData == null || imageData.length == 0) return "No file provided";
+
+        String resolvedContentType = resolveContentType(contentType, filename);
+        if (!ALLOWED_FORMATS.contains(resolvedContentType))
             return "Invalid format. Allowed: JPEG, PNG, GIF, WebP";
-        if (file.getSize() > maxImageSize) return "File exceeds maximum size";
+        if (imageData.length > maxImageSize) return "File exceeds maximum size";
         return null;
+    }
+
+    private String resolveContentType(String contentType, String filename) {
+        if (contentType != null && !contentType.isBlank()) {
+            String normalized = contentType.split(";")[0].trim().toLowerCase();
+            if (ALLOWED_FORMATS.contains(normalized)) {
+                return normalized;
+            }
+        }
+
+        if (filename == null) {
+            return "";
+        }
+
+        String lowerFilename = filename.toLowerCase();
+        if (lowerFilename.endsWith(".jpg") || lowerFilename.endsWith(".jpeg")) {
+            return "image/jpeg";
+        }
+        if (lowerFilename.endsWith(".png")) {
+            return "image/png";
+        }
+        if (lowerFilename.endsWith(".gif")) {
+            return "image/gif";
+        }
+        if (lowerFilename.endsWith(".webp")) {
+            return "image/webp";
+        }
+
+        return "";
     }
 
     private String calculateHash(byte[] data) {

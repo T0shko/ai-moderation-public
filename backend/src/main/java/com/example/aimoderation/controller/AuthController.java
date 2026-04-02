@@ -1,13 +1,17 @@
 package com.example.aimoderation.controller;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import jakarta.validation.Valid;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -32,6 +36,9 @@ import com.example.aimoderation.security.services.UserDetailsImpl;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
+
+    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
+
     @Autowired
     AuthenticationManager authenticationManager;
 
@@ -46,22 +53,36 @@ public class AuthController {
 
     @PostMapping("/signin")
     public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
+        try {
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            loginRequest.getUsername(),
+                            loginRequest.getPassword()));
 
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            String jwt = jwtUtils.generateJwtToken(authentication);
 
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-        String jwt = jwtUtils.generateJwtToken(authentication);
+            UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+            List<String> roles = userDetails.getAuthorities().stream()
+                    .map(item -> item.getAuthority())
+                    .collect(Collectors.toList());
 
-        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-        List<String> roles = userDetails.getAuthorities().stream()
-                .map(item -> item.getAuthority())
-                .collect(Collectors.toList());
+            logger.info("User '{}' logged in successfully", loginRequest.getUsername());
 
-        return ResponseEntity.ok(new JwtResponse(jwt,
-                userDetails.getId(),
-                userDetails.getUsername(),
-                roles));
+            return ResponseEntity.ok(new JwtResponse(jwt,
+                    userDetails.getId(),
+                    userDetails.getUsername(),
+                    roles));
+
+        } catch (BadCredentialsException e) {
+            logger.warn("Failed login attempt for user: {}", loginRequest.getUsername());
+            return ResponseEntity.status(401)
+                    .body(Map.of("error", "Invalid username or password"));
+        } catch (Exception e) {
+            logger.error("Login error for user '{}': {}", loginRequest.getUsername(), e.getMessage(), e);
+            return ResponseEntity.status(500)
+                    .body(Map.of("error", "Authentication failed: " + e.getMessage()));
+        }
     }
 
     @PostMapping("/signup")
@@ -72,20 +93,14 @@ public class AuthController {
                     .body(new MessageResponse("Error: Username is already taken!"));
         }
 
-        // Create new user's account
-        // For simplicity, default to USER role.
-        // In real app, we might check signUpRequest.getRole()
-
         User user = new User();
         user.setUsername(signUpRequest.getUsername());
         user.setPassword(encoder.encode(signUpRequest.getPassword()));
-        // Assign default role using Enum directly
         user.setRole(Role.USER);
 
-        // If admin is requested and allowed, handle logic here.
-        // For now, simple registration = USER.
-
         userRepository.save(user);
+
+        logger.info("New user registered: {}", signUpRequest.getUsername());
 
         return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
     }

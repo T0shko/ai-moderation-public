@@ -150,6 +150,10 @@ public class LocalImageAnalysisService {
             if (imageStats.isHighSaturation && imageStats.averageBrightness > 0.6) adult *= 0.6;
             if (globalSkin > 0.15 && globalSkin < 0.30 && skinBlobSize < 4) adult *= 0.3;
 
+            // Extreme close-up / cartoon egg suppression: Very high skin + very high smoothness
+            if (globalSkin > 0.65 && smoothness > 0.80) adult *= 0.3; // Likely an egg, face close-up, clay, etc.
+            if (globalSkin > 0.85) adult *= 0.2; // Almost entirely beige/skin color, very unlikely to be explicit
+
             adultScores[s] = Math.min(adult, 1.0);
 
             // ── VIOLENCE scoring ────────────────────────────────────────

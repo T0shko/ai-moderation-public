@@ -1,16 +1,77 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Custom exception for authentication failures.
+/// Screens catch this to trigger navigation to login.
+class AuthException implements Exception {
+  final String message;
+  AuthException([this.message = 'Session expired. Please log in again.']);
+  @override
+  String toString() => message;
+}
+
 class ApiService {
-  final String baseUrl = "http://localhost:8080/api";
+  static const String _apiBaseUrlOverride = String.fromEnvironment(
+    'API_BASE_URL',
+  );
+  static const String _apiPortOverride = String.fromEnvironment(
+    'API_PORT',
+    defaultValue: '8080',
+  );
+
+  final String baseUrl = _resolveBaseUrl();
+
+  static String _resolveBaseUrl() {
+    if (_apiBaseUrlOverride.isNotEmpty) {
+      return _normalizeBaseUrl(_apiBaseUrlOverride);
+    }
+
+    if (kIsWeb) {
+      final currentUri = Uri.base;
+      final backendHost = currentUri.host.isEmpty
+          ? 'localhost'
+          : currentUri.host;
+      final backendScheme = currentUri.scheme == 'https' ? 'https' : 'http';
+      final backendPort = int.tryParse(_apiPortOverride) ?? 8080;
+
+      return Uri(
+        scheme: backendScheme,
+        host: backendHost,
+        port: backendPort,
+        path: 'api',
+      ).toString();
+    }
+
+    return 'http://localhost:8080/api';
+  }
+
+  static String _normalizeBaseUrl(String value) {
+    return value.endsWith('/') ? value.substring(0, value.length - 1) : value;
+  }
+
+  /// Global navigator key – set from main.dart so ApiService can
+  /// redirect to /login on auth failures from anywhere in the app.
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
 
   // ── Auth token helpers ──────────────────────────────────────────
 
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('token');
+  }
+
+  /// Returns the token or throws [AuthException] + redirects to login.
+  Future<String> _requireToken() async {
+    final token = await getToken();
+    if (token == null || token.isEmpty) {
+      await _forceLogout();
+      throw AuthException();
+    }
+    return token;
   }
 
   Future<void> saveToken(
@@ -39,23 +100,104 @@ class ApiService {
     await prefs.clear();
   }
 
-  Map<String, String> _authHeaders(String token) => {
+  /// Clears stored credentials and navigates to login screen.
+  Future<void> _forceLogout() async {
+    await logout();
+    final nav = navigatorKey.currentState;
+    if (nav != null) {
+      nav.pushNamedAndRemoveUntil('/login', (_) => false);
+    }
+  }
+
+  // ── Centralized HTTP helpers (auth-aware) ───────────────────────
+
+  Map<String, String> _jsonAuth(String token) => {
     "Content-Type": "application/json",
     "Authorization": "Bearer $token",
   };
 
-  // ── Authentication ──────────────────────────────────────────────
+  Map<String, String> _bearerOnly(String token) => {
+    "Authorization": "Bearer $token",
+  };
+
+  /// Authenticated GET – handles 401 globally.
+  Future<http.Response> _authGet(String path) async {
+    final token = await _requireToken();
+    final response = await http.get(
+      Uri.parse('$baseUrl$path'),
+      headers: _bearerOnly(token),
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await _forceLogout();
+      throw AuthException();
+    }
+    return response;
+  }
+
+  /// Authenticated POST (JSON body) – handles 401 globally.
+  Future<http.Response> _authPost(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final token = await _requireToken();
+    final response = await http.post(
+      Uri.parse('$baseUrl$path'),
+      headers: _jsonAuth(token),
+      body: body != null ? jsonEncode(body) : null,
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await _forceLogout();
+      throw AuthException();
+    }
+    return response;
+  }
+
+  /// Authenticated DELETE – handles 401 globally.
+  Future<http.Response> _authDelete(String path) async {
+    final token = await _requireToken();
+    final response = await http.delete(
+      Uri.parse('$baseUrl$path'),
+      headers: _bearerOnly(token),
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await _forceLogout();
+      throw AuthException();
+    }
+    return response;
+  }
+
+  // ── Authentication (public, no token needed) ────────────────────
 
   Future<Map<String, dynamic>> login(String username, String password) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/signin'),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"username": username, "password": password}),
-    );
+    final http.Response response;
+    try {
+      response = await http.post(
+        Uri.parse('$baseUrl/auth/signin'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"username": username, "password": password}),
+      );
+    } catch (e) {
+      throw Exception('Cannot connect to server. Is the backend running?');
+    }
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
-    throw Exception('Failed to login');
+    if (response.statusCode == 401) {
+      throw Exception('Invalid username or password');
+    }
+    // Parse error message from server if available
+    try {
+      final body = jsonDecode(response.body);
+      throw Exception(body['error'] ?? body['message'] ?? 'Login failed');
+    } catch (e) {
+      if (e.toString().contains('Login failed') ||
+          e.toString().contains('Invalid') ||
+          e.toString().contains('Cannot connect') ||
+          e.toString().contains('Authentication')) {
+        rethrow;
+      }
+      throw Exception('Login failed (${response.statusCode})');
+    }
   }
 
   Future<Map<String, dynamic>> register(
@@ -70,12 +212,13 @@ class ApiService {
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
-    throw Exception('Failed to register');
+    throw Exception('Registration failed');
   }
 
   // ── Comments ────────────────────────────────────────────────────
 
   Future<List<dynamic>> getComments() async {
+    // Public endpoint – no auth required
     final response = await http.get(Uri.parse('$baseUrl/comments'));
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -84,23 +227,14 @@ class ApiService {
   }
 
   Future<void> postComment(String content) async {
-    final token = await getToken();
-    final response = await http.post(
-      Uri.parse('$baseUrl/comments'),
-      headers: _authHeaders(token!),
-      body: jsonEncode({"content": content}),
-    );
+    final response = await _authPost('/comments', body: {"content": content});
     if (response.statusCode != 200) {
       throw Exception('Failed to post comment');
     }
   }
 
   Future<List<dynamic>> getPendingComments() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/comments/pending'),
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final response = await _authGet('/comments/pending');
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
@@ -108,10 +242,8 @@ class ApiService {
   }
 
   Future<void> moderateComment(int id, bool approved) async {
-    final token = await getToken();
-    final response = await http.post(
-      Uri.parse('$baseUrl/comments/$id/moderate?approved=$approved'),
-      headers: {"Authorization": "Bearer $token"},
+    final response = await _authPost(
+      '/comments/$id/moderate?approved=$approved',
     );
     if (response.statusCode != 200) {
       throw Exception('Failed to moderate comment');
@@ -121,11 +253,7 @@ class ApiService {
   // ── Admin ───────────────────────────────────────────────────────
 
   Future<List<dynamic>> getUsers() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/admin/users'),
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final response = await _authGet('/admin/users');
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
@@ -133,22 +261,14 @@ class ApiService {
   }
 
   Future<void> updateUserRole(int userId, String role) async {
-    final token = await getToken();
-    final response = await http.post(
-      Uri.parse('$baseUrl/admin/users/$userId/role?role=$role'),
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final response = await _authPost('/admin/users/$userId/role?role=$role');
     if (response.statusCode != 200) {
       throw Exception('Failed to update role');
     }
   }
 
   Future<Map<String, dynamic>> getAiSettings() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/admin/ai-settings'),
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final response = await _authGet('/admin/ai-settings');
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
@@ -156,11 +276,9 @@ class ApiService {
   }
 
   Future<void> updateAiSettings(double threshold, String activeModel) async {
-    final token = await getToken();
-    final response = await http.post(
-      Uri.parse('$baseUrl/admin/ai-settings'),
-      headers: _authHeaders(token!),
-      body: jsonEncode({"threshold": threshold, "activeModel": activeModel}),
+    final response = await _authPost(
+      '/admin/ai-settings',
+      body: {"threshold": threshold, "activeModel": activeModel},
     );
     if (response.statusCode != 200) {
       throw Exception('Failed to update AI settings');
@@ -168,79 +286,91 @@ class ApiService {
   }
 
   Future<List<dynamic>> getAllCommentsAdmin() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/admin/comments'),
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final response = await _authGet('/admin/comments');
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
     throw Exception('Failed to load all comments');
   }
 
-  // ── Image moderation ────────────────────────────────────────────
+  // ── Vision Lab ──────────────────────────────────────────────────
 
-  Future<Map<String, dynamic>> uploadImage(
-    List<int> imageBytes,
-    String filename,
-  ) async {
-    final token = await getToken();
-
-    var request = http.MultipartRequest(
-      'POST',
-      Uri.parse('$baseUrl/moderation/images/upload'),
-    );
-    request.headers['Authorization'] = 'Bearer $token';
-
-    String contentType = 'image/jpeg';
-    if (filename.toLowerCase().endsWith('.png')) {
-      contentType = 'image/png';
-    } else if (filename.toLowerCase().endsWith('.gif')) {
-      contentType = 'image/gif';
-    } else if (filename.toLowerCase().endsWith('.webp')) {
-      contentType = 'image/webp';
+  Future<Map<String, dynamic>> getVisionLabInfo() async {
+    final response = await http.get(Uri.parse('$baseUrl/vision-lab'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
     }
+    throw Exception('Failed to load vision lab info');
+  }
 
-    request.files.add(
-      http.MultipartFile.fromBytes(
-        'file',
-        imageBytes,
-        filename: filename,
-        contentType: MediaType.parse(contentType),
-      ),
-    );
+  Future<Map<String, dynamic>> analyzeVisionImage(
+    Uint8List imageBytes,
+    String filename,
+    String? contentType,
+  ) async {
+    final resolvedContentType = _resolveImageContentType(filename, contentType);
 
-    final streamedResponse = await request.send();
-    final response = await http.Response.fromStream(streamedResponse);
+    final http.Response response;
+    try {
+      response = await http.post(
+        Uri.parse('$baseUrl/vision-lab'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'filename': filename,
+          'contentType': resolvedContentType,
+          'imageBase64': base64Encode(imageBytes),
+        }),
+      );
+    } catch (e) {
+      throw Exception(
+        'Could not connect to the vision lab. Check that the backend is running.',
+      );
+    }
 
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
+
+    if (response.statusCode == 400 || response.statusCode == 405) {
+      try {
+        final body = jsonDecode(response.body);
+        throw Exception(
+          body['message'] ?? body['error'] ?? 'Vision lab request failed',
+        );
+      } catch (e) {
+        if (e is Exception) rethrow;
+      }
+    }
+
+    if (response.statusCode == 413) {
+      throw Exception('Image is too large. Maximum size is 10 MB.');
+    }
+
     throw Exception(
-      'Image moderation failed (${response.statusCode}): ${response.body}',
+      'Vision lab request failed (error ${response.statusCode}). Please try again.',
     );
   }
 
-  Future<Map<String, dynamic>> getImageModerationStats() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/moderation/images/stats'),
-      headers: {"Authorization": "Bearer $token"},
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+  String _resolveImageContentType(String filename, String? contentType) {
+    if (contentType != null && contentType.isNotEmpty) {
+      return contentType;
     }
-    throw Exception('Failed to load image stats');
+
+    final lowerFilename = filename.toLowerCase();
+    if (lowerFilename.endsWith('.png')) return 'image/png';
+    if (lowerFilename.endsWith('.gif')) return 'image/gif';
+    if (lowerFilename.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
   }
 
   /// Test message sentiment analysis
   Future<Map<String, dynamic>> testSentiment(String message) async {
-    final token = await getToken();
-    final response = await http.post(
-      Uri.parse('$baseUrl/comments/test-analyze'),
-      headers: _authHeaders(token!),
-      body: jsonEncode({"content": message}),
+    final response = await _authPost(
+      '/comments/test-analyze',
+      body: {"content": message},
     );
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -250,17 +380,13 @@ class ApiService {
 
   // ── AI Chat ─────────────────────────────────────────────────────
 
-  /// Send a message to the AI chatbot
-  /// [provider] can be "huggingface", "opennlp", or "combined"
   Future<Map<String, dynamic>> sendChatMessage(
     String message, {
     String provider = 'combined',
   }) async {
-    final token = await getToken();
-    final response = await http.post(
-      Uri.parse('$baseUrl/chat'),
-      headers: _authHeaders(token!),
-      body: jsonEncode({"message": message, "provider": provider}),
+    final response = await _authPost(
+      '/chat',
+      body: {"message": message, "provider": provider},
     );
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -268,38 +394,23 @@ class ApiService {
     throw Exception('Chat failed (${response.statusCode}): ${response.body}');
   }
 
-  /// Get conversation history
   Future<Map<String, dynamic>> getChatHistory() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/chat/history'),
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final response = await _authGet('/chat/history');
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
     throw Exception('Failed to load chat history');
   }
 
-  /// Clear conversation history
   Future<void> clearChatHistory() async {
-    final token = await getToken();
-    final response = await http.delete(
-      Uri.parse('$baseUrl/chat/history'),
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final response = await _authDelete('/chat/history');
     if (response.statusCode != 200) {
       throw Exception('Failed to clear chat history');
     }
   }
 
-  /// Get available AI providers
   Future<Map<String, dynamic>> getChatProviders() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/chat/providers'),
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final response = await _authGet('/chat/providers');
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }

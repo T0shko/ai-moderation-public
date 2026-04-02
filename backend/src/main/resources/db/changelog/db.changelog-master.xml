@@ -84,4 +84,5 @@
     <include file="db/changelog/004-create-ai-settings-table.xml"/>
     <include file="db/changelog/005-create-training-data-table.xml"/>
     <include file="db/changelog/006-create-image-moderation-table.xml"/>
+    <include file="db/changelog/007-fix-admin-password.xml"/>
 </databaseChangeLog>

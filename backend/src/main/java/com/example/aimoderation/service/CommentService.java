@@ -36,9 +36,6 @@ public class CommentService {
     private SentimentAnalysisService sentimentAnalysisService;
 
     @Autowired
-    private ClaudeTextModerationService claudeTextModerationService;
-
-    @Autowired
     private ModerationTrainingDataRepository trainingDataRepository;
 
     @Transactional
@@ -51,32 +48,20 @@ public class CommentService {
         comment.setAuthor(author);
 
         AiSettings settings = aiSettingsRepository.findFirstByOrderByIdAsc().orElse(null);
-        String activeModel = settings != null ? settings.getActiveModel() : "ensemble";
         double threshold = settings != null && settings.getThreshold() != null ? settings.getThreshold() : 0.7;
 
         // === ENSEMBLE MODERATION: Run all applicable models, block if ANY flags ===
         SentimentAnalysisService.AnalysisResult wordFilterResult = null;
-        ClaudeTextModerationService.TextModerationResult claudeResult = null;
 
         boolean wordFilterBlocks = false;
-        boolean claudeBlocks = false;
 
-        // Run word-filter model (always fast, no API cost)
-        if (!"claude-only".equals(activeModel)) {
-            wordFilterResult = sentimentAnalysisService.analyze(content);
-            wordFilterBlocks = wordFilterResult.getSentiment() == Sentiment.NEGATIVE;
-            logger.info("Word-filter result: sentiment={}, confidence={}", wordFilterResult.getSentiment(), wordFilterResult.getConfidence());
-        }
-
-        // Run Claude AI model
-        if (!"basic-v1".equals(activeModel)) {
-            claudeResult = claudeTextModerationService.moderateText(content);
-            claudeBlocks = claudeResult.blocked();
-            logger.info("Claude result: blocked={}, confidence={}, categories={}", claudeResult.blocked(), claudeResult.confidence(), claudeResult.categories());
-        }
+        // Word-filter ALWAYS runs — it's fast, free, and catches known bad words
+        wordFilterResult = sentimentAnalysisService.analyze(content);
+        wordFilterBlocks = wordFilterResult.getSentiment() == Sentiment.NEGATIVE;
+        logger.info("Word-filter result: sentiment={}, confidence={}", wordFilterResult.getSentiment(), wordFilterResult.getConfidence());
 
         // Ensemble decision: if ANY model says block → PENDING for review
-        boolean shouldBlock = wordFilterBlocks || claudeBlocks;
+        boolean shouldBlock = wordFilterBlocks;
 
         // Use highest confidence across all models
         double maxConfidence = 0.0;
@@ -85,15 +70,11 @@ public class CommentService {
             maxConfidence = Math.max(maxConfidence, wordFilterResult.getConfidence());
             finalSentiment = wordFilterResult.getSentiment();
         }
-        if (claudeResult != null) {
-            maxConfidence = Math.max(maxConfidence, claudeResult.confidence());
-            if (claudeResult.blocked()) finalSentiment = Sentiment.NEGATIVE;
-        }
 
         comment.setSentiment(finalSentiment);
         comment.setConfidenceScore(maxConfidence);
 
-        // If below threshold, also flag for review (even if no model detected issues)
+        // If any model flags OR confidence is below threshold → PENDING for review
         if (shouldBlock || maxConfidence < threshold) {
             comment.setStatus(CommentStatus.PENDING);
         } else {

@@ -35,9 +35,10 @@ A full-stack application for AI-powered content moderation with user management 
 
 3. **Start the Flutter frontend (in a new terminal):**
    ```bash
-   cd frontend
-   flutter run
+   ./frontend/start_web.sh
    ```
+
+   This starts the Flutter web app on `http://localhost:4200`.
 
 ## Manual Setup
 
@@ -70,7 +71,7 @@ mvn spring-boot:run
 ```bash
 cd frontend
 flutter pub get
-flutter run
+flutter run -d chrome --web-hostname 0.0.0.0 --web-port 4200
 ```
 
 ## Default Credentials
@@ -89,6 +90,7 @@ flutter run
 ## API Endpoints
 
 - **Backend**: http://localhost:8080
+- **Frontend (web)**: http://localhost:4200
 - **Authentication**: POST /api/auth/signin
 - **Comments**: GET /api/comments
 - **Admin Panel**: GET /api/admin/*

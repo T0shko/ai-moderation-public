@@ -1,6 +1,7 @@
 package com.example.aimoderation.security.jwt;
 
 import java.io.IOException;
+import java.util.Set;
 
 import com.example.aimoderation.security.services.UserDetailsServiceImpl;
 import jakarta.servlet.FilterChain;
@@ -27,25 +28,50 @@ public class AuthTokenFilter extends OncePerRequestFilter {
 
     private static final Logger logger = LoggerFactory.getLogger(AuthTokenFilter.class);
 
+    // Paths that never need JWT processing
+    private static final Set<String> PUBLIC_PREFIXES = Set.of(
+            "/api/auth/",
+            "/api/vision-lab",
+            "/error"
+    );
+
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-            throws ServletException, IOException {
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        // Skip ALL OPTIONS requests (CORS preflight)
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+        // Skip public endpoints
+        String path = request.getRequestURI();
+        for (String prefix : PUBLIC_PREFIXES) {
+            if (path.startsWith(prefix)) {
+                return true;
+            }
+        }
+        // Skip GET /api/comments (public feed)
+        if ("GET".equalsIgnoreCase(request.getMethod()) && "/api/comments".equals(path)) {
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+            FilterChain filterChain) throws ServletException, IOException {
         try {
             String jwt = parseJwt(request);
             if (jwt != null && jwtUtils.validateJwtToken(jwt)) {
                 String username = jwtUtils.getUserNameFromJwtToken(jwt);
-
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        userDetails,
-                        null,
-                        userDetails.getAuthorities());
+                        userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         } catch (Exception e) {
-            logger.error("Cannot set user authentication: {}", e);
+            logger.error("Cannot set user authentication: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);
@@ -53,11 +79,9 @@ public class AuthTokenFilter extends OncePerRequestFilter {
 
     private String parseJwt(HttpServletRequest request) {
         String headerAuth = request.getHeader("Authorization");
-
         if (StringUtils.hasText(headerAuth) && headerAuth.startsWith("Bearer ")) {
             return headerAuth.substring(7);
         }
-
         return null;
     }
 }

@@ -64,7 +64,7 @@ garbage
 scum
 disgust
 
-# Bulgarian profanity
+# Bulgarian profanity (Cyrillic)
 майка ти
 мамка му
 путка
@@ -78,3 +78,39 @@ disgust
 дърт
 кучи син
 копеле
+
+# Bulgarian profanity (Latin transliteration)
+maika ti
+mamka mu
+putka
+putkata
+kurva
+kurvo
+pederast
+pedal
+glupak
+zadnik
+shiban
+proklet
+dart
+kuchi sin
+kopele
+ebati
+eba ti
+ebi se
+gadno
+pederas
+hui
+huj
+laina
+laino
+guz
+dupe
+picha
+pichka
+shibana
+shibano
+da ti eba
+na maika ti
+maika ti da eba
+

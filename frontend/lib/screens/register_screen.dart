@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -21,7 +22,6 @@ class _RegisterScreenState extends State<RegisterScreen>
   bool _obscureConfirm = true;
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
-  late Animation<Offset> _slideAnim;
 
   @override
   void initState() {
@@ -30,14 +30,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
-    _fadeAnim = Tween<double>(
-      begin: 0,
-      end: 1,
-    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
-    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero)
-        .animate(
-          CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
-        );
+    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
     _animController.forward();
   }
 
@@ -70,16 +63,13 @@ class _RegisterScreenState extends State<RegisterScreen>
       await api.register(_usernameController.text, _passwordController.text);
 
       if (mounted) {
-        _showSnackBar('Account created successfully!');
-        await Future.delayed(const Duration(milliseconds: 800));
+        _showSnackBar('Account created!');
+        await Future.delayed(const Duration(milliseconds: 600));
         if (mounted) Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
-        _showSnackBar(
-          'Registration failed. Try a different username.',
-          isError: true,
-        );
+        _showSnackBar('Registration failed. Try another username.', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -89,19 +79,7 @@ class _RegisterScreenState extends State<RegisterScreen>
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: Colors.white,
-              size: 18,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(message, style: const TextStyle(fontSize: 14)),
-            ),
-          ],
-        ),
+        content: Text(message, style: GoogleFonts.dmSans(fontSize: 14)),
         backgroundColor: isError ? AppTheme.error : AppTheme.success,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
@@ -115,33 +93,31 @@ class _RegisterScreenState extends State<RegisterScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bgPrimary,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Back button
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: AppIconButton(
-                  icon: Icons.arrow_back,
-                  onPressed: () => Navigator.pop(context),
+      backgroundColor: AppTheme.bgDeep,
+      body: NexusBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: AppIconButton(
+                    icon: Icons.arrow_back,
+                    onPressed: () => Navigator.pop(context),
+                  ),
                 ),
               ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: FadeTransition(
-                  opacity: _fadeAnim,
-                  child: SlideTransition(
-                    position: _slideAnim,
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  child: FadeTransition(
+                    opacity: _fadeAnim,
                     child: Column(
                       children: [
                         const SizedBox(height: 16),
                         _buildHeader(),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 36),
                         _buildForm(),
                         const SizedBox(height: 24),
                         _buildLoginLink(),
@@ -151,8 +127,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -166,28 +142,24 @@ class _RegisterScreenState extends State<RegisterScreen>
           height: 64,
           decoration: BoxDecoration(
             gradient: AppTheme.successGradient,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: AppTheme.glowShadow(AppTheme.success),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: AppTheme.glow(AppTheme.success, 0.25),
           ),
-          child: const Icon(
-            Icons.person_add_outlined,
-            size: 30,
-            color: Colors.white,
-          ),
+          child: const Icon(Icons.person_add_alt_1_outlined, size: 30, color: Colors.white),
         ),
-        const SizedBox(height: 20),
-        const Text(
+        const SizedBox(height: 24),
+        Text(
           'Create Account',
-          style: TextStyle(
-            fontSize: 26,
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 28,
             fontWeight: FontWeight.w700,
             color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Join our community',
-          style: TextStyle(fontSize: 14, color: AppTheme.textTertiary),
+        Text(
+          'Join the moderation network',
+          style: GoogleFonts.dmSans(fontSize: 13, color: AppTheme.textTertiary),
         ),
       ],
     );
@@ -198,11 +170,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
-          AppTextField(
-            controller: _usernameController,
-            label: 'Username',
-            prefixIcon: Icons.person_outline,
-          ),
+          AppTextField(controller: _usernameController, label: 'Username', prefixIcon: Icons.person_outline),
           const SizedBox(height: 16),
           AppTextField(
             controller: _passwordController,
@@ -210,13 +178,8 @@ class _RegisterScreenState extends State<RegisterScreen>
             obscureText: _obscurePassword,
             prefixIcon: Icons.lock_outline,
             suffixIcon: IconButton(
-              icon: Icon(
-                _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                color: AppTheme.textTertiary,
-                size: 20,
-              ),
-              onPressed: () =>
-                  setState(() => _obscurePassword = !_obscurePassword),
+              icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: AppTheme.textTertiary, size: 20),
+              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
             ),
           ),
           const SizedBox(height: 16),
@@ -225,20 +188,16 @@ class _RegisterScreenState extends State<RegisterScreen>
             label: 'Confirm Password',
             obscureText: _obscureConfirm,
             prefixIcon: Icons.lock_outline,
+            onSubmitted: (_) => _register(),
             suffixIcon: IconButton(
-              icon: Icon(
-                _obscureConfirm ? Icons.visibility_off : Icons.visibility,
-                color: AppTheme.textTertiary,
-                size: 20,
-              ),
-              onPressed: () =>
-                  setState(() => _obscureConfirm = !_obscureConfirm),
+              icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility, color: AppTheme.textTertiary, size: 20),
+              onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
             ),
           ),
           const SizedBox(height: 28),
           ActionButton(
             text: 'Create Account',
-            icon: Icons.arrow_forward,
+            icon: Icons.arrow_forward_rounded,
             isLoading: _isLoading,
             onPressed: _register,
             gradient: AppTheme.successGradient,
@@ -252,16 +211,13 @@ class _RegisterScreenState extends State<RegisterScreen>
     return TextButton(
       onPressed: () => Navigator.pop(context),
       child: RichText(
-        text: const TextSpan(
+        text: TextSpan(
           text: 'Already have an account? ',
-          style: TextStyle(color: AppTheme.textTertiary, fontSize: 14),
+          style: GoogleFonts.dmSans(color: AppTheme.textTertiary, fontSize: 14),
           children: [
             TextSpan(
               text: 'Sign In',
-              style: TextStyle(
-                color: AppTheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
+              style: GoogleFonts.dmSans(color: AppTheme.primary, fontWeight: FontWeight.w600),
             ),
           ],
         ),

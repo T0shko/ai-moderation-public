@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -16,25 +17,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _username;
   List<String> _roles = [];
 
-  // Moderation defaults (from application.properties)
   double _threshold = 0.6;
   bool _autoApprovePositive = true;
   bool _autoRejectHighConf = true;
   double _autoRejectThreshold = 0.85;
 
-  // Chat defaults
   bool _chatEnabled = true;
   final int _maxMessageLength = 2000;
   final int _rateLimitPerMinute = 30;
   final String _defaultProvider = 'combined';
 
-  // Content defaults
   final int _maxCommentLength = 1000;
   bool _allowAnonymous = false;
   bool _requireModerationNewUsers = true;
   final int _newUserThreshold = 5;
 
-  // Notification defaults
   bool _emailOnFlagged = false;
   bool _dashboardAlerts = true;
 
@@ -68,59 +65,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bgPrimary,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: AppTheme.primary),
-                    )
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                      child: Column(
-                        children: [
-                          _buildProfileCard(),
-                          const SizedBox(height: 14),
-                          _buildModerationDefaults(),
-                          const SizedBox(height: 14),
-                          _buildChatDefaults(),
-                          const SizedBox(height: 14),
-                          _buildContentDefaults(),
-                          const SizedBox(height: 14),
-                          _buildNotificationDefaults(),
-                          const SizedBox(height: 20),
-                          _buildDangerZone(),
-                        ],
+      backgroundColor: AppTheme.bgDeep,
+      body: NexusBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(),
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                        child: Column(
+                          children: [
+                            _buildProfileCard(),
+                            const SizedBox(height: 14),
+                            _buildModerationDefaults(),
+                            const SizedBox(height: 14),
+                            _buildChatDefaults(),
+                            const SizedBox(height: 14),
+                            _buildContentDefaults(),
+                            const SizedBox(height: 14),
+                            _buildNotificationDefaults(),
+                            const SizedBox(height: 20),
+                            _buildDangerZone(),
+                          ],
+                        ),
                       ),
-                    ),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: AppTheme.bgSecondary.withValues(alpha: 0.7),
+        border: const Border(bottom: BorderSide(color: AppTheme.borderDefault)),
+      ),
       child: Row(
         children: [
-          AppIconButton(
-            icon: Icons.arrow_back,
-            onPressed: () => Navigator.pop(context),
+          AppIconButton(icon: Icons.arrow_back_rounded, onPressed: () => Navigator.pop(context)),
+          const SizedBox(width: 14),
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              gradient: AppTheme.warmGradient,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: AppTheme.glow(AppTheme.coral, 0.2),
+            ),
+            child: const Icon(Icons.settings_outlined, color: Colors.white, size: 22),
           ),
           const SizedBox(width: 14),
-          const Expanded(
-            child: Text(
-              'Settings',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textPrimary,
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Settings', style: GoogleFonts.playfairDisplay(fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+                Text('Configuration', style: GoogleFonts.dmSans(fontSize: 12, color: AppTheme.textTertiary)),
+              ],
             ),
           ),
         ],
@@ -131,31 +139,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildProfileCard() {
     final roleStr = _roles.map((r) => r.replaceFirst('ROLE_', '')).join(', ');
     final roleColor = _roles.contains('ROLE_ADMIN')
-        ? AppTheme.aurora4
+        ? AppTheme.coral
         : _roles.contains('ROLE_MODERATOR')
-        ? AppTheme.aurora1
-        : AppTheme.info;
+            ? AppTheme.amber
+            : AppTheme.info;
 
     return SurfaceCard(
       padding: const EdgeInsets.all(20),
+      accentGradient: AppTheme.warmGradient,
       child: Row(
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              gradient: AppTheme.primaryGradient,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Center(
-              child: Text(
-                (_username ?? '?').substring(0, 1).toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: roleColor.withValues(alpha: 0.15),
+            child: Text(
+              (_username ?? '?').substring(0, 1).toUpperCase(),
+              style: GoogleFonts.playfairDisplay(color: roleColor, fontSize: 22, fontWeight: FontWeight.w700),
             ),
           ),
           const SizedBox(width: 16),
@@ -165,14 +164,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Text(
                   _username ?? 'Loading...',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                  ),
+                  style: GoogleFonts.playfairDisplay(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
                 ),
                 const SizedBox(height: 4),
-                StatusBadge(text: roleStr, color: roleColor),
+                StatusBadge(text: roleStr, color: roleColor, showPulse: true),
               ],
             ),
           ),
@@ -187,34 +182,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(
-            title: 'Moderation Defaults',
-            subtitle: 'Auto-moderation behavior',
-          ),
-          _buildSliderRow(
-            'Confidence Threshold',
-            _threshold,
-            (v) => setState(() => _threshold = v),
-          ),
+          const SectionHeader(title: 'Moderation', subtitle: 'Auto-moderation behavior'),
+          _buildSliderRow('Confidence Threshold', _threshold, (v) => setState(() => _threshold = v)),
           const Divider(color: AppTheme.borderDefault, height: 24),
-          _buildSwitchRow(
-            'Auto-approve positive',
-            'Automatically approve positive sentiment',
-            _autoApprovePositive,
-            (v) => setState(() => _autoApprovePositive = v),
-          ),
-          _buildSwitchRow(
-            'Auto-reject high confidence',
-            'Reject when flagged above threshold',
-            _autoRejectHighConf,
-            (v) => setState(() => _autoRejectHighConf = v),
-          ),
+          _buildSwitchRow('Auto-approve positive', 'Automatically approve positive sentiment', _autoApprovePositive, (v) => setState(() => _autoApprovePositive = v)),
+          _buildSwitchRow('Auto-reject high confidence', 'Reject when flagged above threshold', _autoRejectHighConf, (v) => setState(() => _autoRejectHighConf = v)),
           if (_autoRejectHighConf)
-            _buildSliderRow(
-              'Auto-reject Threshold',
-              _autoRejectThreshold,
-              (v) => setState(() => _autoRejectThreshold = v),
-            ),
+            _buildSliderRow('Auto-reject Threshold', _autoRejectThreshold, (v) => setState(() => _autoRejectThreshold = v)),
         ],
       ),
     );
@@ -226,16 +200,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(
-            title: 'AI Chat Defaults',
-            subtitle: 'Chat configuration',
-          ),
-          _buildSwitchRow(
-            'Chat Enabled',
-            'Allow users to use AI chat',
-            _chatEnabled,
-            (v) => setState(() => _chatEnabled = v),
-          ),
+          const SectionHeader(title: 'AI Chat', subtitle: 'Chat configuration'),
+          _buildSwitchRow('Chat Enabled', 'Allow users to use AI chat', _chatEnabled, (v) => setState(() => _chatEnabled = v)),
           _buildInfoRow('Max Message Length', '$_maxMessageLength chars'),
           _buildInfoRow('Rate Limit', '$_rateLimitPerMinute/min'),
           _buildInfoRow('Default Provider', _defaultProvider),
@@ -250,24 +216,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(
-            title: 'Content Defaults',
-            subtitle: 'User content rules',
-          ),
+          const SectionHeader(title: 'Content', subtitle: 'User content rules'),
           _buildInfoRow('Max Comment Length', '$_maxCommentLength chars'),
           const Divider(color: AppTheme.borderDefault, height: 24),
-          _buildSwitchRow(
-            'Allow Anonymous',
-            'Let non-logged-in users comment',
-            _allowAnonymous,
-            (v) => setState(() => _allowAnonymous = v),
-          ),
-          _buildSwitchRow(
-            'Moderate New Users',
-            'Require moderation for first $_newUserThreshold posts',
-            _requireModerationNewUsers,
-            (v) => setState(() => _requireModerationNewUsers = v),
-          ),
+          _buildSwitchRow('Allow Anonymous', 'Let non-logged-in users comment', _allowAnonymous, (v) => setState(() => _allowAnonymous = v)),
+          _buildSwitchRow('Moderate New Users', 'Require moderation for first $_newUserThreshold posts', _requireModerationNewUsers, (v) => setState(() => _requireModerationNewUsers = v)),
         ],
       ),
     );
@@ -279,22 +232,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(
-            title: 'Notifications',
-            subtitle: 'Alert preferences',
-          ),
-          _buildSwitchRow(
-            'Email on Flagged',
-            'Send email when content is flagged',
-            _emailOnFlagged,
-            (v) => setState(() => _emailOnFlagged = v),
-          ),
-          _buildSwitchRow(
-            'Dashboard Alerts',
-            'Show alerts on dashboard',
-            _dashboardAlerts,
-            (v) => setState(() => _dashboardAlerts = v),
-          ),
+          const SectionHeader(title: 'Notifications', subtitle: 'Alert preferences'),
+          _buildSwitchRow('Email on Flagged', 'Send email when content is flagged', _emailOnFlagged, (v) => setState(() => _emailOnFlagged = v)),
+          _buildSwitchRow('Dashboard Alerts', 'Show alerts on dashboard', _dashboardAlerts, (v) => setState(() => _dashboardAlerts = v)),
         ],
       ),
     );
@@ -303,33 +243,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildDangerZone() {
     return SurfaceCard(
       padding: const EdgeInsets.all(20),
-      showBorder: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(
-            title: 'Account',
+          SectionHeader(
+            title: 'Session',
             subtitle: 'Manage your session',
+            trailing: StatusBadge(text: 'ACTIVE', color: AppTheme.success, showPulse: true),
           ),
-          ActionButton(
-            text: 'Sign Out',
-            icon: Icons.logout,
-            onPressed: _logout,
-            gradient: AppTheme.dangerGradient,
-          ),
+          ActionButton(text: 'Sign Out', icon: Icons.logout_rounded, onPressed: _logout, gradient: AppTheme.dangerGradient),
         ],
       ),
     );
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────
-
-  Widget _buildSwitchRow(
-    String title,
-    String subtitle,
-    bool value,
-    ValueChanged<bool> onChanged,
-  ) {
+  Widget _buildSwitchRow(String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -338,41 +266,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
+                Text(title, style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
                 const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textTertiary,
-                  ),
-                ),
+                Text(subtitle, style: GoogleFonts.dmSans(fontSize: 12, color: AppTheme.textTertiary)),
               ],
             ),
           ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeTrackColor: AppTheme.primary,
-            inactiveTrackColor: AppTheme.bgTertiary,
-          ),
+          Switch(value: value, onChanged: onChanged, activeTrackColor: AppTheme.primary, inactiveTrackColor: AppTheme.bgTertiary),
         ],
       ),
     );
   }
 
-  Widget _buildSliderRow(
-    String title,
-    double value,
-    ValueChanged<double> onChanged,
-  ) {
+  Widget _buildSliderRow(String title, double value, ValueChanged<double> onChanged) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -380,22 +286,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           Row(
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
+              Text(title, style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
               const Spacer(),
-              Text(
-                value.toStringAsFixed(2),
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.primary,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
                 ),
+                child: Text(value.toStringAsFixed(2), style: GoogleFonts.dmSans(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.primary)),
               ),
             ],
           ),
@@ -407,13 +307,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               overlayColor: AppTheme.primary.withValues(alpha: 0.15),
               trackHeight: 4,
             ),
-            child: Slider(
-              value: value,
-              min: 0.0,
-              max: 1.0,
-              divisions: 20,
-              onChanged: onChanged,
-            ),
+            child: Slider(value: value, min: 0.0, max: 1.0, divisions: 20, onChanged: onChanged),
           ),
         ],
       ),
@@ -425,25 +319,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
-          ),
+          Text(label, style: GoogleFonts.dmSans(fontSize: 14, color: AppTheme.textSecondary)),
           const Spacer(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: AppTheme.bgTertiary,
               borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              border: Border.all(color: AppTheme.borderDefault),
             ),
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
-              ),
-            ),
+            child: Text(value, style: GoogleFonts.dmSans(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
           ),
         ],
       ),
