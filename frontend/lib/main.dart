@@ -16,9 +16,9 @@ void main() {
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
+      statusBarIconBrightness: Brightness.dark,
       systemNavigationBarColor: AppTheme.bgDeep,
-      systemNavigationBarIconBrightness: Brightness.light,
+      systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
 
@@ -38,7 +38,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'AI Moderation',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
       navigatorKey: ApiService.navigatorKey,
       home: const _AuthGate(),
       routes: {
@@ -54,54 +54,76 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Checks for a valid stored session on cold start.
-/// If a token + roles exist, skip login and go straight to the right screen.
-/// Otherwise show the login screen.
-class _AuthGate extends StatelessWidget {
+/// Cold-start session check.
+///
+/// 1. No access token cached → LoginScreen.
+/// 2. Token cached → validate it against /auth/me, which silently refreshes
+///    via the refresh token if the access token is expired. If validation
+///    fails the user is routed to LoginScreen (logout already cleared state).
+/// 3. Validation succeeds → resolve home by role.
+class _AuthGate extends StatefulWidget {
   const _AuthGate();
 
   @override
-  Widget build(BuildContext context) {
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  late final Future<List<String>?> _bootstrap;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrap = _resolveSession();
+  }
+
+  Future<List<String>?> _resolveSession() async {
     final api = Provider.of<ApiService>(context, listen: false);
-    return FutureBuilder<String?>(
-      future: api.getToken(),
+    final token = await api.getToken();
+    if (token == null || token.isEmpty) return null;
+
+    try {
+      final profile = await api.me();
+      final roles = (profile['roles'] as List?)
+              ?.map((e) => e.toString())
+              .toList(growable: false) ??
+          const <String>[];
+      return roles;
+    } on AuthException {
+      return null;
+    } catch (_) {
+      // Network down: fall back to cached roles so the UI still loads;
+      // protected calls will surface a connection error on their own.
+      return await api.getRoles();
+    }
+  }
+
+  Widget _splash() => const Scaffold(
+        backgroundColor: AppTheme.paper,
+        body: Center(
+          child: CircularProgressIndicator(color: AppTheme.persimmon),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<String>?>(
+      future: _bootstrap,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            backgroundColor: AppTheme.bgDeep,
-            body: Center(
-              child: CircularProgressIndicator(color: AppTheme.coral),
-            ),
-          );
+          return _splash();
         }
-
-        final token = snapshot.data;
-        if (token == null || token.isEmpty) {
+        final roles = snapshot.data;
+        if (roles == null) {
           return const LoginScreen();
         }
-
-        // Token exists – resolve destination from roles
-        return FutureBuilder<List<String>>(
-          future: api.getRoles(),
-          builder: (ctx, roleSnap) {
-            if (roleSnap.connectionState != ConnectionState.done) {
-              return const Scaffold(
-                backgroundColor: AppTheme.bgDeep,
-                body: Center(
-                  child: CircularProgressIndicator(color: AppTheme.coral),
-                ),
-              );
-            }
-            final roles = roleSnap.data ?? [];
-            if (roles.contains('ROLE_ADMIN')) {
-              return const AdminDashboard();
-            } else if (roles.contains('ROLE_MODERATOR')) {
-              return const ModeratorDashboard();
-            } else {
-              return const UserHomeScreen();
-            }
-          },
-        );
+        if (roles.contains('ROLE_ADMIN')) {
+          return const AdminDashboard();
+        }
+        if (roles.contains('ROLE_MODERATOR')) {
+          return const ModeratorDashboard();
+        }
+        return const UserHomeScreen();
       },
     );
   }

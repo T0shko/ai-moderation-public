@@ -85,4 +85,6 @@
     <include file="db/changelog/005-create-training-data-table.xml"/>
     <include file="db/changelog/006-create-image-moderation-table.xml"/>
     <include file="db/changelog/007-fix-admin-password.xml"/>
+    <include file="db/changelog/008-user-security-columns.xml"/>
+    <include file="db/changelog/009-create-refresh-tokens-table.xml"/>
 </databaseChangeLog>

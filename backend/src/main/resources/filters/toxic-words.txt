@@ -92,7 +92,7 @@ glupak
 zadnik
 shiban
 proklet
-dart
+kur
 kuchi sin
 kopele
 ebati

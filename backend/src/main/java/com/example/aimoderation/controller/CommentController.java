@@ -13,7 +13,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@CrossOrigin(origins = "*", maxAge = 3600)
+// CORS is configured globally in WebSecurityConfig — never use @CrossOrigin(*) here
+// because it conflicts with Access-Control-Allow-Credentials: true.
 @RestController
 @RequestMapping("/api/comments")
 public class CommentController {
@@ -56,16 +57,26 @@ public class CommentController {
      */
     @PostMapping("/test-analyze")
     @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
-    public ResponseEntity<Map<String, Object>> testAnalyze(@RequestBody CommentRequest request) {
-        SentimentAnalysisService.AnalysisResult result = sentimentAnalysisService.analyze(request.getContent());
-        
+    public ResponseEntity<Map<String, Object>> testAnalyze(
+            @RequestBody(required = false) CommentRequest request) {
+
+        // Be lenient with an empty/missing body: analyze the empty string and
+        // return NEUTRAL rather than a 400. Keeps the admin sandbox usable
+        // even when the client briefly forgets to attach a body.
+        String content = (request != null && request.getContent() != null)
+                ? request.getContent()
+                : "";
+
+        SentimentAnalysisService.AnalysisResult result = sentimentAnalysisService.analyze(content);
+
+        String sentimentName = result.getSentiment().name();
         Map<String, Object> response = new HashMap<>();
-        response.put("content", request.getContent());
-        response.put("sentiment", result.getSentiment().name());
+        response.put("content", content);
+        response.put("sentiment", sentimentName);
         response.put("confidence", result.getConfidence());
-        response.put("wouldBeAutoApproved", result.getSentiment().name().equals("POSITIVE") || 
-                                            result.getSentiment().name().equals("NEUTRAL"));
-        
+        response.put("wouldBeAutoApproved",
+                sentimentName.equals("POSITIVE") || sentimentName.equals("NEUTRAL"));
+
         return ResponseEntity.ok(response);
     }
 

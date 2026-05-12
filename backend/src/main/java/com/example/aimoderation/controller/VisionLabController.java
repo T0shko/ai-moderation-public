@@ -33,7 +33,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/vision-lab")
-@CrossOrigin(origins = "*")
 public class VisionLabController {
 
     private static final Logger logger = LoggerFactory.getLogger(VisionLabController.class);
