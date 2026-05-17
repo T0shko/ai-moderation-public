@@ -210,6 +210,7 @@ class _AiChatScreenState extends State<AiChatScreen>
             ),
             itemBuilder: (_) => [
               _providerItem('combined', 'Combined', Icons.merge_type),
+              _providerItem('groq', 'Groq (free API)', Icons.bolt),
               _providerItem('opennlp', 'OpenNLP', Icons.memory),
               _providerItem(
                   'huggingface', 'HuggingFace', Icons.cloud_outlined),
@@ -228,6 +229,7 @@ class _AiChatScreenState extends State<AiChatScreen>
   String _providerLabel(String p) {
     return switch (p) {
       'combined' => 'Combined',
+      'groq' => 'Groq',
       'opennlp' => 'OpenNLP',
       'huggingface' => 'HuggingFace',
       _ => p,

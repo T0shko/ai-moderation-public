@@ -1203,7 +1203,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                     color: AppTheme.ink,
                     weight: FontWeight.w600,
                   ),
-                  items: ['combined', 'opennlp', 'huggingface']
+                  items: ['combined', 'groq', 'opennlp', 'huggingface']
                       .map((m) =>
                           DropdownMenuItem(value: m, child: Text(m.toUpperCase())))
                       .toList(),
