@@ -53,10 +53,16 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
     setState(() => _isPosting = true);
     try {
       final api = Provider.of<ApiService>(context, listen: false);
-      await api.postComment(_commentController.text);
+      final result = await api.postComment(_commentController.text);
       _commentController.clear();
       if (mounted) {
-        _snack('Filed for review \u2014 AI analyzing');
+        final status = result['status']?.toString() ?? 'PENDING';
+        final message = status == 'APPROVED'
+            ? 'Comment published'
+            : status == 'REJECTED'
+                ? 'Comment blocked by moderation'
+                : 'Comment submitted for review';
+        _snack(message);
         _loadComments();
       }
     } on AuthException {

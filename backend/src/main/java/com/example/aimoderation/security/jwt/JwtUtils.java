@@ -57,6 +57,9 @@ public class JwtUtils {
             throw new IllegalStateException(
                     "jwt.secret is not configured. Set the JWT_SECRET environment variable.");
         }
+        if (jwtSecret.contains("change_this") || jwtSecret.contains("your_jwt_secret")) {
+            logger.warn("jwt.secret uses a placeholder value — set JWT_SECRET before production deploy.");
+        }
         byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
         if (keyBytes.length < MIN_SECRET_BYTES) {
             throw new IllegalStateException(

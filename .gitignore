@@ -15,11 +15,13 @@ Thumbs.db
 *.iml
 *.ipr
 *.iws
+docs/
 
 # ── AI Agents / Settings ─────────────────────────────────────
 .claude/
 .agents/
 .antigravity/
+.cursor/
 
 # ── Secrets ──────────────────────────────────────────────────
 .env

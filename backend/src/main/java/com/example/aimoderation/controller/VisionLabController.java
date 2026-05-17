@@ -77,7 +77,7 @@ public class VisionLabController {
       logger.error("Vision lab multipart analysis failed: {}", e.getMessage(), e);
       return ResponseEntity.internalServerError().body(Map.of(
           "error", "Vision lab analysis failed.",
-          "message", e.getMessage()));
+          "message", "An unexpected error occurred."));
     }
   }
 
@@ -118,7 +118,15 @@ public class VisionLabController {
             "message", "Send JSON with filename, contentType, and imageBase64."));
       }
 
-      byte[] imageBytes = decodeBase64Image(request.imageBase64());
+      String rawBase64 = request.imageBase64().trim();
+      long estimatedBytes = (rawBase64.length() * 3L) / 4;
+      if (estimatedBytes > maxImageSize) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of(
+            "error", "payload_too_large",
+            "message", "Image exceeds maximum size of " + formatMaxSize(maxImageSize)));
+      }
+
+      byte[] imageBytes = decodeBase64Image(rawBase64);
       User user = resolveUser(authentication);
       ImageModerationResult result = imageModerationService.moderateImage(
           imageBytes,
@@ -140,7 +148,7 @@ public class VisionLabController {
       logger.error("Vision lab analysis failed: {}", e.getMessage(), e);
       return ResponseEntity.internalServerError().body(Map.of(
           "error", "Vision lab analysis failed.",
-          "message", e.getMessage()));
+          "message", "An unexpected error occurred."));
     }
   }
 
@@ -160,6 +168,7 @@ public class VisionLabController {
     response.put("confidence", result.getConfidenceScore() != null ? result.getConfidenceScore() : 0.0);
     response.put("categories", parseCategories(result.getDetectedCategories()));
     response.put("reason", result.getModerationReason() != null ? result.getModerationReason() : "");
+    response.put("labels", result.getClipLabels() != null ? result.getClipLabels() : List.of());
     response.put("createdAt", result.getCreatedAt());
     response.put("moderatedAt", result.getModeratedAt());
     response.put("engine", "Spatial Grid Ensemble");

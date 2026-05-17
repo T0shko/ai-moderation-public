@@ -2,22 +2,33 @@ package com.example.aimoderation.service;
 
 import com.example.aimoderation.model.Sentiment;
 import com.example.aimoderation.repository.ModerationTrainingDataRepository;
+import com.example.aimoderation.util.TextNormalizer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-/**
- * Service for analyzing sentiment of text content.
- * Uses file-based word filters with priority-based scoring.
- * 
- * KEY PRINCIPLE: Toxic content ALWAYS takes priority.
- * A message with ANY toxic words is NEGATIVE regardless of positive words.
- */
 @Service
 public class SentimentAnalysisService {
+
+    private static final Pattern LONG_CONSONANTS = Pattern.compile(
+            "[^aeiouаеиоуъяю\\s]{7,}", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OBFUSCATION_PATTERNS = Pattern.compile(
+            "f[\\*#@$.\\-_]?[uv][\\*#@$.\\-_]?[c]?[\\*#@$.\\-_]?[k]|"
+                    + "ph[uv]ck|sh[\\*#@$.\\-_]?[i1!][\\*#@$.\\-_]?t|\\$h[i1!]t|"
+                    + "[a@][\\*#@$.\\-_]?[s$][\\*#@$.\\-_]?[s$]|"
+                    + "b[\\*#@$.\\-_]?[i1!][\\*#@$.\\-_]?t[\\*#@$.\\-_]?c[\\*#@$.\\-_]?h|"
+                    + "n[\\*#@$.\\-_]?[i1!][\\*#@$.\\-_]?g+[\\*#@$.\\-_]?[ae@]?",
+            Pattern.CASE_INSENSITIVE);
+
+    private final AtomicReference<Set<String>> learnedNegativeCache = new AtomicReference<>(Set.of());
+    private volatile long learnedCacheLoadedAt = 0;
+    private static final long LEARNED_CACHE_TTL_MS = 60_000;
 
     @Autowired
     private ModerationTrainingDataRepository trainingDataRepository;
@@ -27,270 +38,201 @@ public class SentimentAnalysisService {
 
     public AnalysisResult analyze(String text) {
         if (text == null || text.trim().isEmpty()) {
-            return new AnalysisResult(Sentiment.NEUTRAL, 0.5);
+            return new AnalysisResult(Sentiment.NEUTRAL, 0.5, "Empty content.", false, false);
         }
 
         String originalText = text.trim();
-        
-        // Check for gibberish/spam first
+        String normalized = TextNormalizer.normalize(originalText);
+        String compact = TextNormalizer.compact(normalized);
+
         if (isGibberish(originalText)) {
-            return new AnalysisResult(Sentiment.NEGATIVE, 0.9);
+            return new AnalysisResult(Sentiment.NEGATIVE, 0.9,
+                    "Gibberish or spam-like text detected.", false, true);
         }
 
-        // Normalize text for bypass detection (repeated chars, leet speak, etc.)
-        String normalized = normalizeForBypass(originalText.toLowerCase());
-        
-        // Get filter words from file-based service
         Set<String> toxicWords = wordFilterService.getToxicWords();
         Set<String> negativeIndicators = wordFilterService.getNegativeIndicators();
         Set<String> positiveWords = wordFilterService.getPositiveWords();
         Set<String> sensitiveSubjects = wordFilterService.getSensitiveSubjects();
         Set<String> learnedNegative = getLearnedNegativeTokens();
 
-        // === PHASE 1: Detect toxic content (ABSOLUTE PRIORITY) ===
         int toxicCount = 0;
         double toxicSeverity = 0.0;
-        
+
         for (String word : toxicWords) {
-            if (containsWord(normalized, word)) {
+            if (containsWord(normalized, compact, word)) {
                 toxicCount++;
-                toxicSeverity += 3.0;  // Heavy weight for toxic words
+                toxicSeverity += 3.0;
             }
         }
-        
-        // Check for obfuscated toxic words (f*ck, sh!t, etc.)
-        toxicCount += countObfuscatedToxicWords(normalized);
-        toxicSeverity += countObfuscatedToxicWords(normalized) * 2.5;
-        
-        // === CRITICAL: If ANY toxic word is found, it's NEGATIVE. Period. ===
+
+        int obfuscated = countObfuscatedToxicWords(normalized);
+        if (obfuscated > 0) {
+            toxicCount += obfuscated;
+            toxicSeverity += obfuscated * 2.5;
+        }
+
         if (toxicCount > 0) {
-            // Calculate confidence based on toxic word count and total words
             String[] words = normalized.split("\\s+");
             double toxicRatio = (double) toxicCount / Math.max(words.length, 1);
-            
-            // Even ONE toxic word in a 100-word essay = still NEGATIVE
-            // More toxic words = higher confidence
             double confidence = Math.min(0.7 + (toxicSeverity * 0.05) + (toxicRatio * 0.2), 0.99);
-            
-            return new AnalysisResult(Sentiment.NEGATIVE, confidence);
+            return new AnalysisResult(Sentiment.NEGATIVE, confidence,
+                    "Toxic language detected (" + toxicCount + " match(es)).", false, false);
         }
-        
-        // === PHASE 2: Check for learned negative patterns ===
+
         for (String token : learnedNegative) {
-            if (normalized.contains(token)) {
-                return new AnalysisResult(Sentiment.NEGATIVE, 0.85);
+            if (containsWord(normalized, compact, token)) {
+                return new AnalysisResult(Sentiment.NEGATIVE, 0.85,
+                        "Matches a pattern from moderator training data.", false, false);
             }
         }
 
-        // === PHASE 3: Check negative indicators (less severe than toxic) ===
         double negativeScore = 0;
         int negativeCount = 0;
-        
+        List<String> matchedNegative = new ArrayList<>();
+
         for (String word : negativeIndicators) {
-            if (containsWord(normalized, word)) {
+            if (containsWord(normalized, compact, word)) {
                 negativeScore += 1.5;
                 negativeCount++;
-            }
-        }
-        
-        // Check sensitive subjects in negative context
-        for (String subject : sensitiveSubjects) {
-            if (normalized.contains(subject)) {
-                // Sensitive subjects alone aren't negative, but amplify negativity
-                negativeScore += 0.5;
+                matchedNegative.add(word);
             }
         }
 
-        // === PHASE 4: Check positive words ===
+        boolean sensitiveOnly = false;
+        List<String> matchedSensitive = new ArrayList<>();
+        for (String subject : sensitiveSubjects) {
+            if (containsWord(normalized, compact, subject)) {
+                negativeScore += 1.0;
+                matchedSensitive.add(subject);
+            }
+        }
+        if (!matchedSensitive.isEmpty() && matchedNegative.isEmpty() && toxicCount == 0) {
+            sensitiveOnly = true;
+        }
+
         double positiveScore = 0;
         int positiveCount = 0;
-        
         for (String word : positiveWords) {
-            if (containsWord(normalized, word)) {
+            if (containsWord(normalized, compact, word)) {
                 positiveScore += 1.0;
                 positiveCount++;
             }
         }
 
-        // === PHASE 5: Mixed content detection ===
-        // If there are negative indicators alongside positive words,
-        // the message is suspicious - could be sarcasm or masking
-        if (negativeCount > 0 && positiveCount > 0) {
-            // Mixed sentiment - lean towards negative if negative indicators present
-            if (negativeScore >= positiveScore * 0.5) {
-                double confidence = Math.min(0.6 + (negativeScore * 0.1), 0.95);
-                return new AnalysisResult(Sentiment.NEGATIVE, confidence);
-            }
+        if (negativeCount > 0 && positiveCount > 0 && negativeScore >= positiveScore * 0.5) {
+            double confidence = Math.min(0.6 + (negativeScore * 0.1), 0.95);
+            return new AnalysisResult(Sentiment.NEGATIVE, confidence,
+                    "Mixed content with negative indicators.", false, false);
         }
 
-        // === PHASE 6: Final determination ===
+        if (sensitiveOnly) {
+            return new AnalysisResult(Sentiment.NEGATIVE, 0.75,
+                    "Sensitive subject detected: " + String.join(", ", matchedSensitive) + ".",
+                    true, false);
+        }
+
         if (negativeScore > positiveScore && negativeScore > 0.5) {
             double confidence = Math.min(0.5 + (negativeScore * 0.15), 0.95);
-            return new AnalysisResult(Sentiment.NEGATIVE, confidence);
-        }
-        
-        if (positiveScore > negativeScore && positiveScore > 1.0) {
-            double confidence = Math.min(0.6 + (positiveScore * 0.1), 0.95);
-            return new AnalysisResult(Sentiment.POSITIVE, confidence);
+            return new AnalysisResult(Sentiment.NEGATIVE, confidence,
+                    "Negative language indicators detected.", false, false);
         }
 
-        return new AnalysisResult(Sentiment.NEUTRAL, 0.7);
+        if (positiveScore > negativeScore && positiveScore >= 1.0) {
+            double confidence = Math.min(0.6 + (positiveScore * 0.1), 0.95);
+            return new AnalysisResult(Sentiment.POSITIVE, confidence,
+                    "Positive sentiment detected.", false, false);
+        }
+
+        return new AnalysisResult(Sentiment.NEUTRAL, 0.5,
+                "No strong moderation signals; review recommended if unsure.", false, false);
     }
 
-    /**
-     * Check if text contains a word (with word boundary awareness)
-     */
-    private boolean containsWord(String text, String word) {
-        // First check simple contains
-        if (!text.contains(word)) {
+    boolean containsWord(String normalized, String compact, String word) {
+        if (word == null || word.isBlank()) return false;
+        String w = word.trim().toLowerCase();
+        if (w.contains(" ")) {
+            return normalized.contains(w) || compact.contains(w.replace(" ", ""));
+        }
+        if (normalized.contains(w) || compact.contains(w)) {
+            String pattern = "(?<![a-zA-Z])" + Pattern.quote(w) + "(?![a-zA-Z])";
+            return Pattern.compile(pattern).matcher(normalized).find()
+                    || compact.contains(w);
+        }
+        return false;
+    }
+
+    private int countObfuscatedToxicWords(String text) {
+        return OBFUSCATION_PATTERNS.matcher(text).find() ? 1 : 0;
+    }
+
+    private boolean isGibberish(String text) {
+        if (text.length() < 12) {
             return false;
         }
-        
-        // For multi-word phrases, simple contains is enough
-        if (word.contains(" ")) {
-            return true;
-        }
-        
-        // For single words, check word boundaries to avoid false positives
-        // e.g., "class" shouldn't match "ass"
-        String pattern = "(?<![a-zA-Z])" + Pattern.quote(word) + "(?![a-zA-Z])";
-        return Pattern.compile(pattern).matcher(text).find();
-    }
-
-    /**
-     * Detect common obfuscation patterns for toxic words
-     */
-    private int countObfuscatedToxicWords(String text) {
-        int count = 0;
-        
-        // Common obfuscation patterns
-        String[][] patterns = {
-            // f-word variants
-            {"f[\\*\\#\\@\\$\\.\\-\\_]?[uv][\\*\\#\\@\\$\\.\\-\\_]?[c]?[\\*\\#\\@\\$\\.\\-\\_]?[k]", "f-word"},
-            {"ph[uv]ck", "f-word"},
-            // s-word variants
-            {"sh[\\*\\#\\@\\$\\.\\-\\_]?[i1!][\\*\\#\\@\\$\\.\\-\\_]?t", "s-word"},
-            {"\\$h[i1!]t", "s-word"},
-            // a-word variants
-            {"[a@][\\*\\#\\@\\$\\.\\-\\_]?[s\\$][\\*\\#\\@\\$\\.\\-\\_]?[s\\$]", "a-word"},
-            // b-word variants
-            {"b[\\*\\#\\@\\$\\.\\-\\_]?[i1!][\\*\\#\\@\\$\\.\\-\\_]?t[\\*\\#\\@\\$\\.\\-\\_]?c[\\*\\#\\@\\$\\.\\-\\_]?h", "b-word"},
-            // n-word (this should definitely be caught)
-            {"n[\\*\\#\\@\\$\\.\\-\\_]?[i1!][\\*\\#\\@\\$\\.\\-\\_]?g+[\\*\\#\\@\\$\\.\\-\\_]?[ae@]?", "n-word"},
-        };
-        
-        for (String[] pattern : patterns) {
-            if (Pattern.compile(pattern[0], Pattern.CASE_INSENSITIVE).matcher(text).find()) {
-                count++;
-            }
-        }
-        
-        return count;
-    }
-
-    /**
-     * Normalize text to detect bypass attempts
-     */
-    private String normalizeForBypass(String text) {
-        if (text == null) return "";
-        
-        StringBuilder sb = new StringBuilder();
-        
-        // Remove repeated characters (e.g., "fuuuuck" -> "fuck")
-        if (text.length() > 0) {
-            sb.append(text.charAt(0));
-            for (int i = 1; i < text.length(); i++) {
-                char current = text.charAt(i);
-                char previous = text.charAt(i - 1);
-                // Allow max 2 repeated chars
-                if (i >= 2 && current == previous && text.charAt(i - 2) == previous) {
-                    continue;
-                }
-                sb.append(current);
-            }
-        }
-        
-        String result = sb.toString();
-        
-        // Leet speak conversion
-        result = result
-            .replace('0', 'o')
-            .replace('1', 'i')
-            .replace('3', 'e')
-            .replace('4', 'a')
-            .replace('5', 's')
-            .replace('7', 't')
-            .replace('@', 'a')
-            .replace('$', 's')
-            .replace('!', 'i')
-            // Cyrillic lookalikes for Bulgarian context
-            .replace('а', 'a')
-            .replace('е', 'e')
-            .replace('о', 'o')
-            .replace('с', 'c')
-            .replace('р', 'p')
-            .replace('х', 'x');
-        
-        // Remove common separator characters used for obfuscation
-        result = result.replaceAll("[\\-\\_\\.\\*]", "");
-        
-        return result;
-    }
-
-    /**
-     * Detect gibberish/spam text
-     */
-    private boolean isGibberish(String text) {
-        // Check for long consonant sequences (nonsense)
-        boolean hasLongConsonants = Pattern
-            .compile("[^aeiouаеиоуъяю\\s]{7,}", Pattern.CASE_INSENSITIVE)
-            .matcher(text)
-            .find();
-        
-        // Check for very low character diversity in long text
-        long uniqueChars = text.chars().distinct().count();
-        boolean lowDiversity = text.length() > 20 && 
-            (double) uniqueChars / text.length() < 0.15;
-        
-        // Check for repeated word spam
         String[] words = text.split("\\s+");
+        if (words.length < 2) {
+            return false;
+        }
+
+        boolean hasLongConsonants = LONG_CONSONANTS.matcher(text).find();
+        long uniqueChars = text.chars().distinct().count();
+        boolean lowDiversity = text.length() > 20 && (double) uniqueChars / text.length() < 0.15;
+
         if (words.length > 5) {
             Set<String> uniqueWords = Set.of(words);
             double wordDiversity = (double) uniqueWords.size() / words.length;
             if (wordDiversity < 0.2) {
-                return true; // Too many repeated words
+                return true;
             }
         }
-        
+
         return hasLongConsonants || lowDiversity;
     }
 
-    /**
-     * Get tokens from learned negative training data
-     */
     private Set<String> getLearnedNegativeTokens() {
-        return trainingDataRepository.findAll().stream()
-            .filter(data -> "NEGATIVE".equals(data.getLabel()))
-            .map(data -> normalizeForBypass(data.getContent().toLowerCase().trim()))
-            .filter(content -> !content.isEmpty())
-            .collect(Collectors.toSet());
+        long now = System.currentTimeMillis();
+        if (now - learnedCacheLoadedAt < LEARNED_CACHE_TTL_MS) {
+            return learnedNegativeCache.get();
+        }
+        Set<String> tokens = trainingDataRepository.findAll().stream()
+                .filter(data -> "NEGATIVE".equals(data.getLabel()))
+                .map(data -> data.getContent())
+                .filter(content -> content != null && !content.isBlank())
+                .flatMap(content -> java.util.Arrays.stream(content.split("[|,]")))
+                .map(String::trim)
+                .map(String::toLowerCase)
+                .filter(token -> token.length() >= 4 && token.length() <= 64)
+                .collect(Collectors.toUnmodifiableSet());
+        learnedNegativeCache.set(tokens);
+        learnedCacheLoadedAt = now;
+        return tokens;
+    }
+
+    public void invalidateLearnedCache() {
+        learnedCacheLoadedAt = 0;
     }
 
     public static class AnalysisResult {
         private final Sentiment sentiment;
         private final Double confidence;
+        private final String reason;
+        private final boolean sensitiveOnly;
+        private final boolean gibberish;
 
-        public AnalysisResult(Sentiment sentiment, Double confidence) {
+        public AnalysisResult(Sentiment sentiment, Double confidence, String reason,
+                              boolean sensitiveOnly, boolean gibberish) {
             this.sentiment = sentiment;
             this.confidence = confidence;
+            this.reason = reason;
+            this.sensitiveOnly = sensitiveOnly;
+            this.gibberish = gibberish;
         }
 
-        public Sentiment getSentiment() {
-            return sentiment;
-        }
-
-        public Double getConfidence() {
-            return confidence;
-        }
+        public Sentiment getSentiment() { return sentiment; }
+        public Double getConfidence() { return confidence; }
+        public String getReason() { return reason; }
+        public boolean isSensitiveOnly() { return sensitiveOnly; }
+        public boolean isGibberish() { return gibberish; }
     }
 }

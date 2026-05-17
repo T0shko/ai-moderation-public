@@ -307,9 +307,16 @@ class ApiService {
       }
     }
 
-    if (response.statusCode == 401 || response.statusCode == 403) {
+    if (response.statusCode == 401) {
       await _forceLogout();
       throw AuthException(_extractErrorMessage(response));
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(
+        status: 403,
+        code: 'forbidden',
+        message: _extractErrorMessage(response, fallback: 'Access denied.'),
+      );
     }
     return response;
   }
@@ -426,18 +433,28 @@ class ApiService {
   // ── Comments ────────────────────────────────────────────────────
 
   Future<List<dynamic>> getComments() async {
-    final response = await http.get(Uri.parse('$baseUrl/comments'));
+    final http.Response response;
+    try {
+      response = await http.get(Uri.parse('$baseUrl/comments'));
+    } catch (e) {
+      throw ApiException(
+        status: 0,
+        code: 'network_error',
+        message: 'Cannot connect to server. Is the backend running?',
+      );
+    }
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
     throw _toApiException(response, fallback: 'Failed to load comments');
   }
 
-  Future<void> postComment(String content) async {
+  Future<Map<String, dynamic>> postComment(String content) async {
     final response = await _authPost('/comments', body: {'content': content});
-    if (response.statusCode != 200) {
-      throw _toApiException(response, fallback: 'Failed to post comment');
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
     }
+    throw _toApiException(response, fallback: 'Failed to post comment');
   }
 
   Future<List<dynamic>> getPendingComments() async {
@@ -520,19 +537,16 @@ class ApiService {
 
     final http.Response response;
     try {
-      response = await http.post(
-        Uri.parse('$baseUrl/vision-lab'),
-        headers: const {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({
+      response = await _authPost(
+        '/vision-lab',
+        body: {
           'filename': filename,
           'contentType': resolvedContentType,
           'imageBase64': base64Encode(imageBytes),
-        }),
+        },
       );
     } catch (e) {
+      if (e is ApiException || e is AuthException) rethrow;
       throw ApiException(
         status: 0,
         code: 'network_error',

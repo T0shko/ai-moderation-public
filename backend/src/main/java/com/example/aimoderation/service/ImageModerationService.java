@@ -17,11 +17,10 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * Orchestrates the three-layer image moderation ensemble:
+ * Orchestrates the two-layer image moderation ensemble:
  *
- *   Layer 1 — Claude vision API      : semantic understanding of image content
- *   Layer 2 — HuggingFace API        : NSFW + object classification (optional, needs token)
- *   Layer 3 — LocalImageAnalysisService : custom spatial-grid pixel algorithm (always available)
+ *   Layer 1 — HuggingFace CLIP zero-shot (optional, needs API token)
+ *   Layer 2 — LocalImageAnalysisService spatial-grid heuristics (always available)
  *
  * If ANY layer signals a violation → image is blocked/flagged.
  */
@@ -77,8 +76,14 @@ public class ImageModerationService {
 
         Optional<ImageModerationResult> cached = imageModerationRepository.findByImageHash(imageHash);
         if (cached.isPresent()) {
-            logger.info("Cache hit for hash: {}", imageHash);
-            return cloneForResponse(cached.get(), safeFilename);
+            ImageModerationResult existing = cached.get();
+            String cachedFilename = existing.getImageUrl();
+            if (cachedFilename != null && cachedFilename.equals(safeFilename)) {
+                logger.info("Cache hit for hash: {}", imageHash);
+                return cloneForResponse(existing, safeFilename);
+            }
+            logger.info("Cache skipped for hash {}: filename changed ('{}' -> '{}')",
+                    imageHash, cachedFilename, safeFilename);
         }
 
         HuggingFaceImageService.ImageAnalysisResult hfResult =
@@ -115,28 +120,14 @@ public class ImageModerationService {
             LocalImageAnalysisService.AnalysisResult local) {
 
         List<ImageContentCategory> categories = new ArrayList<>(local.categories());
-        StringBuilder reasons = new StringBuilder();
         double maxConfidence = local.confidence();
 
-        // ── HuggingFace contribution ──────────────────────────────────────────
         for (String cat : hf.categories()) {
             ImageContentCategory mapped = mapCategory(cat);
             if (mapped != null && !categories.contains(mapped)) categories.add(mapped);
         }
-        if (hf.reason() != null && !hf.reason().isBlank()) {
-            reasons.append("[HF] ").append(hf.reason()).append(" ");
-        }
-        if (!hf.detectedLabels().isEmpty()) {
-            reasons.append("Labels: ").append(String.join(", ", hf.detectedLabels())).append(" ");
-        }
         maxConfidence = Math.max(maxConfidence, hf.confidence());
 
-        // ── Local algorithm contribution ──────────────────────────────────────
-        if (local.reason() != null && !local.reason().isBlank()) {
-            reasons.append(local.reason());
-        }
-
-        // ── Final status ──────────────────────────────────────────────────────
         ImageModerationStatus status;
         boolean anyRejected = hf.status() == HuggingFaceImageService.ImageAnalysisStatus.REJECTED
                 || local.status() == ImageModerationStatus.REJECTED;
@@ -151,10 +142,88 @@ public class ImageModerationService {
             status = ImageModerationStatus.SAFE;
         }
 
-        return new EnsembleResult(status, maxConfidence, categories, reasons.toString().trim());
+        String reason = buildHumanReason(status, categories, hf, local);
+        List<String> clipLabels = hf.detectedLabels() != null
+                ? new ArrayList<>(hf.detectedLabels())
+                : List.of();
+
+        return new EnsembleResult(status, maxConfidence, categories, reason, clipLabels);
     }
 
-    /** Map raw category strings from Claude/HF to the ImageContentCategory enum */
+    /**
+     * Build a single human-readable reason aligned with the final ensemble status.
+     * Omits layer boilerplate and never claims "no violations" when status is not SAFE.
+     */
+    private String buildHumanReason(
+            ImageModerationStatus status,
+            List<ImageContentCategory> categories,
+            HuggingFaceImageService.ImageAnalysisResult hf,
+            LocalImageAnalysisService.AnalysisResult local) {
+
+        if (status == ImageModerationStatus.SAFE) {
+            return "No policy violations detected.";
+        }
+
+        List<String> parts = new ArrayList<>();
+
+        String hfReason = hf.reason();
+        if (hfReason != null && !hfReason.isBlank() && isViolationHfReason(hfReason)) {
+            parts.add(hfReason.trim());
+        }
+
+        String localReason = local.reason();
+        if (localReason != null && localReason.contains("[LOCAL]")) {
+            for (String segment : localReason.split("\\[LOCAL]")) {
+                String trimmed = segment.trim();
+                if (!trimmed.isEmpty() && !isSafeBoilerplate(trimmed)) {
+                    parts.add("[LOCAL] " + trimmed);
+                }
+            }
+        }
+
+        if (parts.isEmpty() && !categories.isEmpty()) {
+            for (ImageContentCategory category : categories) {
+                parts.add(categoryViolationMessage(category, status));
+            }
+        }
+
+        if (parts.isEmpty()) {
+            return status == ImageModerationStatus.REJECTED
+                    ? "Content blocked due to policy violation."
+                    : "Content flagged for manual review.";
+        }
+
+        return String.join(" ", parts);
+    }
+
+    private boolean isViolationHfReason(String reason) {
+        String lower = reason.toLowerCase();
+        return !lower.contains("no policy violations")
+                && !lower.contains("relying on local")
+                && !lower.contains("api not configured");
+    }
+
+    private boolean isSafeBoilerplate(String text) {
+        String lower = text.toLowerCase();
+        return lower.contains("no violations detected")
+                || lower.contains("no policy violations");
+    }
+
+    private String categoryViolationMessage(ImageContentCategory category, ImageModerationStatus status) {
+        String action = status == ImageModerationStatus.REJECTED ? "blocked" : "flagged";
+        return switch (category) {
+            case ADULT -> "Adult or explicit content detected — image " + action + ".";
+            case VIOLENCE -> "Violent content detected — image " + action + ".";
+            case WEAPONS -> "Weapon-like content detected — image " + action + ".";
+            case SPAM -> "Spam or text-overlay content detected — image " + action + ".";
+            case DRUGS -> "Drug-related content detected — image " + action + ".";
+            case HATE_SYMBOLS -> "Hate-symbol content detected — image " + action + ".";
+            case SELF_HARM -> "Self-harm related content detected — image " + action + ".";
+            case GRAPHIC_MEDICAL -> "Graphic medical content detected — image " + action + ".";
+        };
+    }
+
+    /** Map raw category strings from HF to the ImageContentCategory enum */
     private ImageContentCategory mapCategory(String raw) {
         if (raw == null) return null;
         return switch (raw.toUpperCase()) {
@@ -184,6 +253,7 @@ public class ImageModerationService {
         result.setConfidenceScore(ensemble.confidence());
         result.setDetectedCategories(categoriesToString(ensemble.categories()));
         result.setModerationReason(ensemble.reason());
+        result.setClipLabels(ensemble.clipLabels());
         result.setUploadedBy(uploadedBy);
         result.setModeratedAt(LocalDateTime.now());
         return result;
@@ -219,6 +289,7 @@ public class ImageModerationService {
         result.setConfidenceScore(source.getConfidenceScore());
         result.setDetectedCategories(source.getDetectedCategories());
         result.setModerationReason(source.getModerationReason());
+        result.setClipLabels(source.getClipLabels() != null ? source.getClipLabels() : List.of());
         result.setUploadedBy(source.getUploadedBy());
         result.setCreatedAt(source.getCreatedAt());
         result.setModeratedAt(source.getModeratedAt());
@@ -297,5 +368,6 @@ public class ImageModerationService {
             ImageModerationStatus status,
             double confidence,
             List<ImageContentCategory> categories,
-            String reason) {}
+            String reason,
+            List<String> clipLabels) {}
 }

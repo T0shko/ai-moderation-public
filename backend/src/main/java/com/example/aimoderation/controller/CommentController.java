@@ -1,8 +1,8 @@
 package com.example.aimoderation.controller;
 
-import com.example.aimoderation.model.Comment;
+import com.example.aimoderation.dto.CommentResponse;
 import com.example.aimoderation.service.CommentService;
-import com.example.aimoderation.service.SentimentAnalysisService;
+import com.example.aimoderation.service.ModerationDecisionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -13,8 +13,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-// CORS is configured globally in WebSecurityConfig — never use @CrossOrigin(*) here
-// because it conflicts with Access-Control-Allow-Credentials: true.
 @RestController
 @RequestMapping("/api/comments")
 public class CommentController {
@@ -22,65 +20,63 @@ public class CommentController {
     @Autowired
     private CommentService commentService;
 
-    @Autowired
-    private SentimentAnalysisService sentimentAnalysisService;
-
     @GetMapping
-    public List<Comment> getAllApprovedComments() {
+    public List<CommentResponse> getAllApprovedComments() {
         return commentService.getAllApprovedComments();
     }
 
     @PostMapping
     @PreAuthorize("hasRole('USER') or hasRole('MODERATOR') or hasRole('ADMIN')")
-    public ResponseEntity<Comment> postComment(@RequestBody CommentRequest request) {
+    public ResponseEntity<CommentResponse> postComment(@RequestBody CommentRequest request) {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        Comment comment = commentService.createComment(request.getContent(), username);
+        CommentResponse comment = commentService.createComment(request.getContent(), username);
         return ResponseEntity.ok(comment);
     }
 
     @GetMapping("/pending")
     @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
-    public List<Comment> getPendingComments() {
+    public List<CommentResponse> getPendingComments() {
         return commentService.getPendingComments();
     }
 
     @PostMapping("/{id}/moderate")
     @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
-    public ResponseEntity<Comment> moderateComment(@PathVariable Long id, @RequestParam boolean approved) {
-        Comment comment = commentService.moderateComment(id, approved);
-        return ResponseEntity.ok(comment);
+    public ResponseEntity<CommentResponse> moderateComment(
+            @PathVariable Long id, @RequestParam boolean approved) {
+        return ResponseEntity.ok(commentService.moderateComment(id, approved));
     }
 
-    /**
-     * Test endpoint for analyzing text sentiment without creating a comment.
-     * This is useful for the admin panel testing console.
-     */
     @PostMapping("/test-analyze")
     @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> testAnalyze(
             @RequestBody(required = false) CommentRequest request) {
 
-        // Be lenient with an empty/missing body: analyze the empty string and
-        // return NEUTRAL rather than a 400. Keeps the admin sandbox usable
-        // even when the client briefly forgets to attach a body.
         String content = (request != null && request.getContent() != null)
                 ? request.getContent()
                 : "";
 
-        SentimentAnalysisService.AnalysisResult result = sentimentAnalysisService.analyze(content);
+        ModerationDecisionService.ModerationDecision decision;
+        if (content.isBlank()) {
+            decision = new ModerationDecisionService.ModerationDecision(
+                    com.example.aimoderation.model.CommentStatus.PENDING,
+                    false,
+                    "Empty content.",
+                    com.example.aimoderation.model.Sentiment.NEUTRAL,
+                    0.5);
+        } else {
+            decision = commentService.previewDecision(content);
+        }
 
-        String sentimentName = result.getSentiment().name();
         Map<String, Object> response = new HashMap<>();
         response.put("content", content);
-        response.put("sentiment", sentimentName);
-        response.put("confidence", result.getConfidence());
-        response.put("wouldBeAutoApproved",
-                sentimentName.equals("POSITIVE") || sentimentName.equals("NEUTRAL"));
-
+        response.put("sentiment", decision.sentiment().name());
+        response.put("confidence", decision.confidence());
+        response.put("status", decision.status().name());
+        response.put("reason", decision.reason());
+        response.put("wouldBeAutoApproved", decision.wouldBeAutoApproved());
         return ResponseEntity.ok(response);
     }
 
-    // Simple DTO for request
     public static class CommentRequest {
         private String content;
 
@@ -93,4 +89,3 @@ public class CommentController {
         }
     }
 }
-

@@ -31,9 +31,11 @@ public class AuthTokenFilter extends OncePerRequestFilter {
     /** When a token is rejected by this filter we surface a machine-readable reason. */
     public static final String REASON_REQUEST_ATTR = "auth.failure.reason";
 
-    private static final Set<String> PUBLIC_PREFIXES = Set.of(
-            "/api/auth/",
-            "/api/vision-lab",
+    private static final Set<String> PUBLIC_EXACT_PATHS = Set.of(
+            "/api/auth/signin",
+            "/api/auth/signup",
+            "/api/auth/refresh",
+            "/api/auth/logout",
             "/actuator/health",
             "/error"
     );
@@ -44,12 +46,14 @@ public class AuthTokenFilter extends OncePerRequestFilter {
             return true;
         }
         String path = request.getRequestURI();
-        for (String prefix : PUBLIC_PREFIXES) {
-            if (path.startsWith(prefix)) {
-                return true;
-            }
+        if (PUBLIC_EXACT_PATHS.contains(path)) {
+            return true;
         }
         if ("GET".equalsIgnoreCase(request.getMethod()) && "/api/comments".equals(path)) {
+            return true;
+        }
+        if ("GET".equalsIgnoreCase(request.getMethod())
+                && (path.equals("/api/vision-lab") || path.equals("/api/vision-lab/"))) {
             return true;
         }
         return false;

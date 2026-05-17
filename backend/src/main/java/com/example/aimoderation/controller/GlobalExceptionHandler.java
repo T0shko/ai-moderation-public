@@ -1,5 +1,6 @@
 package com.example.aimoderation.controller;
 
+import com.example.aimoderation.exception.ResourceNotFoundException;
 import com.example.aimoderation.payload.response.ErrorResponse;
 import com.example.aimoderation.payload.response.ErrorResponse.FieldError;
 
@@ -8,6 +9,7 @@ import jakarta.validation.ConstraintViolationException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -166,6 +168,25 @@ public class GlobalExceptionHandler {
                 "bad_request",
                 e.getMessage() != null ? e.getMessage() : "Bad request.",
                 HttpStatus.BAD_REQUEST.value(), req.getRequestURI()));
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFoundResource(
+            ResourceNotFoundException e, HttpServletRequest req) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse.of(
+                "not_found",
+                e.getMessage() != null ? e.getMessage() : "Resource not found.",
+                HttpStatus.NOT_FOUND.value(), req.getRequestURI()));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrity(
+            DataIntegrityViolationException e, HttpServletRequest req) {
+        logger.warn("Data integrity violation: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(
+                "conflict",
+                "Resource already exists or violates a constraint.",
+                HttpStatus.CONFLICT.value(), req.getRequestURI()));
     }
 
     // ── Catch-all ──────────────────────────────────────────────────

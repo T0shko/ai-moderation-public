@@ -22,7 +22,8 @@ class _AdminDashboardState extends State<AdminDashboard>
   bool _isLoading = false;
   String? _error;
   double _threshold = 0.6;
-  String _activeModel = 'ensemble';
+  String _activeModel = 'wordfilter';
+  bool _isAnalyzingText = false;
 
   final _testCommentController = TextEditingController();
   bool _isPostingTest = false;
@@ -159,7 +160,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   void _testAnalyze() async {
     final text = _testCommentController.text.trim();
     if (text.isEmpty) return;
-    setState(() => _isPostingTest = true);
+    setState(() => _isAnalyzingText = true);
     try {
       final api = Provider.of<ApiService>(context, listen: false);
       final result = await api.testSentiment(text);
@@ -167,7 +168,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     } catch (_) {
       _snack('Analysis failed', isError: true);
     } finally {
-      if (mounted) setState(() => _isPostingTest = false);
+      if (mounted) setState(() => _isAnalyzingText = false);
     }
   }
 
@@ -940,7 +941,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                 child: ActionButton(
                   text: 'Analyze',
                   icon: Icons.psychology_outlined,
-                  isLoading: _isPostingTest,
+                  isLoading: _isAnalyzingText,
                   onPressed: _testAnalyze,
                   secondary: true,
                   backgroundColor: AppTheme.paperLight,
@@ -997,6 +998,8 @@ class _AdminDashboardState extends State<AdminDashboard>
     final sentiment = _lastTestResult!['sentiment'] ?? 'UNKNOWN';
     final confidence = (_lastTestResult!['confidence'] ?? 0.0) * 100;
     final wouldApprove = _lastTestResult!['wouldBeAutoApproved'] ?? false;
+    final status = _lastTestResult!['status'] ?? 'PENDING';
+    final reason = _lastTestResult!['reason'] ?? '';
     final sentColor = sentiment == 'NEGATIVE'
         ? AppTheme.rust
         : sentiment == 'POSITIVE'
@@ -1021,8 +1024,19 @@ class _AdminDashboardState extends State<AdminDashboard>
                   AppTheme.ink,
                 ),
               ),
+              Expanded(child: _kv('Status', status, sentColor)),
             ],
           ),
+          if (reason.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('REASONING',
+                style: AppTheme.label(color: AppTheme.textSecondary)),
+            const SizedBox(height: 6),
+            Text(
+              reason,
+              style: AppTheme.body(size: 13, color: AppTheme.textSecondary),
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             children: [
@@ -1034,8 +1048,8 @@ class _AdminDashboardState extends State<AdminDashboard>
               const SizedBox(width: 8),
               Text(
                 wouldApprove
-                    ? 'Would be set in print automatically'
-                    : 'Would be held for review',
+                    ? 'Would be published automatically'
+                    : 'Would be held for review ($status)',
                 style: AppTheme.body(
                   size: 13,
                   color: wouldApprove ? AppTheme.olive : AppTheme.rust,
@@ -1064,6 +1078,9 @@ class _AdminDashboardState extends State<AdminDashboard>
         .map((item) => item.toString())
         .toList();
     final reason = _lastImageResult!['reason'] ?? '';
+    final clipLabels = ((_lastImageResult!['labels'] as List?) ?? const [])
+        .map((item) => item.toString())
+        .toList();
     final confidence =
         ((_lastImageResult!['confidence'] ?? 0.0) as num) * 100;
     final filename = _lastImageResult!['filename'] ??
@@ -1116,9 +1133,23 @@ class _AdminDashboardState extends State<AdminDashboard>
               style: AppTheme.label(color: AppTheme.textSecondary)),
           const SizedBox(height: 6),
           Text(
-            reason.isEmpty ? 'No significant violations detected.' : reason,
+            reason.isEmpty
+                ? (status == 'SAFE'
+                    ? 'No significant violations detected.'
+                    : 'Violation detected — see categories below.')
+                : reason,
             style: AppTheme.body(size: 14, color: AppTheme.textSecondary),
           ),
+          if (clipLabels.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text('CLIP SCORES (DEBUG)',
+                style: AppTheme.label(color: AppTheme.textSecondary)),
+            const SizedBox(height: 6),
+            Text(
+              clipLabels.join(', '),
+              style: AppTheme.mono(size: 11, color: AppTheme.textTertiary),
+            ),
+          ],
           const SizedBox(height: 14),
           Text('CATEGORIES',
               style: AppTheme.label(color: AppTheme.textSecondary)),
@@ -1481,10 +1512,15 @@ class _AdminDashboardState extends State<AdminDashboard>
               divisions: 20,
               onChanged: (v) => setState(() => _threshold = v),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Text moderation uses the rule-based pipeline (saved label is metadata only).',
+              style: AppTheme.mono(size: 10, color: AppTheme.textTertiary),
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
-                Text('Active Model',
+                Text('Pipeline label',
                     style: AppTheme.body(
                       size: 14,
                       color: AppTheme.ink,
@@ -1530,7 +1566,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   }
 
   List<String> _modelItems() {
-    final defaults = ['ensemble', 'wordfilter', 'huggingface', 'claude'];
+    final defaults = ['wordfilter', 'ensemble'];
     if (!defaults.contains(_activeModel)) {
       return [_activeModel, ...defaults];
     }

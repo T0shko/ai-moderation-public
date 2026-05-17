@@ -252,7 +252,6 @@ public class LocalImageAnalysisService {
         ImageModerationStatus status;
         if (categories.isEmpty()) {
             status = ImageModerationStatus.SAFE;
-            reasonBuilder.append("No violations detected by local multi-scale analysis.");
         } else if (maxConfidence >= 0.75) {
             status = ImageModerationStatus.REJECTED;
         } else {

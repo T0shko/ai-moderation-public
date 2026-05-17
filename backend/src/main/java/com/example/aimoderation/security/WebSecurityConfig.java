@@ -127,7 +127,8 @@ public class WebSecurityConfig {
                         .requestMatchers("/api/auth/signin", "/api/auth/signup",
                                 "/api/auth/refresh", "/api/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/comments").permitAll()
-                        .requestMatchers("/api/vision-lab", "/api/vision-lab/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/vision-lab", "/api/vision-lab/").permitAll()
+                        .requestMatchers("/api/vision-lab/**").authenticated()
                         .anyRequest().authenticated()
                 );
 

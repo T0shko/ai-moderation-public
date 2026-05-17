@@ -1,6 +1,7 @@
 package com.example.aimoderation.controller;
 
-import com.example.aimoderation.model.Comment;
+import com.example.aimoderation.dto.CommentResponse;
+import com.example.aimoderation.exception.ResourceNotFoundException;
 import com.example.aimoderation.model.Role;
 import com.example.aimoderation.model.User;
 import com.example.aimoderation.model.AiSettings;
@@ -31,8 +32,10 @@ public class AdminController {
     CommentRepository commentRepository;
 
     @GetMapping("/comments")
-    public ResponseEntity<List<Comment>> getAllComments() {
-        return ResponseEntity.ok(commentRepository.findAll());
+    public ResponseEntity<List<CommentResponse>> getAllComments() {
+        return ResponseEntity.ok(commentRepository.findAll().stream()
+                .map(CommentResponse::from)
+                .collect(Collectors.toList()));
     }
 
     @GetMapping("/users")
@@ -48,7 +51,7 @@ public class AdminController {
     @PostMapping("/users/{id}/role")
     public ResponseEntity<?> updateUserRole(@PathVariable Long id, @RequestParam Role role) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Error: User not found."));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found."));
 
         user.setRole(role);
         userRepository.save(user);
@@ -59,18 +62,28 @@ public class AdminController {
     @GetMapping("/ai-settings")
     public ResponseEntity<?> getAiSettings() {
         return ResponseEntity.ok(aiSettingsRepository.findFirstByOrderByIdAsc()
-                .orElseThrow(() -> new RuntimeException("AI Settings not found")));
+                .orElseThrow(() -> new ResourceNotFoundException("AI Settings not found")));
     }
 
     @PostMapping("/ai-settings")
     public ResponseEntity<?> updateAiSettings(@RequestBody AiSettings settings) {
+        if (settings.getThreshold() == null || settings.getThreshold() < 0 || settings.getThreshold() > 1) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Threshold must be between 0.0 and 1.0"));
+        }
+        String model = settings.getActiveModel();
+        if (model == null || model.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "activeModel is required"));
+        }
+
         AiSettings current = aiSettingsRepository.findFirstByOrderByIdAsc()
                 .orElse(new AiSettings());
 
         current.setThreshold(settings.getThreshold());
-        current.setActiveModel(settings.getActiveModel());
+        current.setActiveModel(model.trim().toLowerCase());
         aiSettingsRepository.save(current);
 
-        return ResponseEntity.ok("AI Settings updated successfully!");
+        return ResponseEntity.ok(current);
     }
 }

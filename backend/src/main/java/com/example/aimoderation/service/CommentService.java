@@ -1,27 +1,33 @@
 package com.example.aimoderation.service;
 
+import com.example.aimoderation.config.AppModerationProperties;
+import com.example.aimoderation.dto.CommentResponse;
+import com.example.aimoderation.exception.ResourceNotFoundException;
 import com.example.aimoderation.model.AiSettings;
 import com.example.aimoderation.model.Comment;
 import com.example.aimoderation.model.CommentStatus;
 import com.example.aimoderation.model.ModerationTrainingData;
-import com.example.aimoderation.model.Sentiment;
 import com.example.aimoderation.model.User;
 import com.example.aimoderation.repository.AiSettingsRepository;
 import com.example.aimoderation.repository.CommentRepository;
 import com.example.aimoderation.repository.ModerationTrainingDataRepository;
 import com.example.aimoderation.repository.UserRepository;
+import com.example.aimoderation.util.TextNormalizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class CommentService {
 
     private static final Logger logger = LoggerFactory.getLogger(CommentService.class);
+    private static final int MAX_TRAINING_TOKENS = 12;
 
     @Autowired
     private CommentRepository commentRepository;
@@ -36,76 +42,111 @@ public class CommentService {
     private SentimentAnalysisService sentimentAnalysisService;
 
     @Autowired
+    private ModerationDecisionService moderationDecisionService;
+
+    @Autowired
     private ModerationTrainingDataRepository trainingDataRepository;
 
-    @Transactional
-    public Comment createComment(String content, String username) {
-        User author = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+    @Autowired
+    private AppModerationProperties appProperties;
 
-        Comment comment = new Comment();
-        comment.setContent(content);
-        comment.setAuthor(author);
+    @Transactional
+    public CommentResponse createComment(String content, String username) {
+        validateContent(content);
+
+        User author = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         AiSettings settings = aiSettingsRepository.findFirstByOrderByIdAsc().orElse(null);
-        double threshold = settings != null && settings.getThreshold() != null ? settings.getThreshold() : 0.7;
 
-        // === ENSEMBLE MODERATION: Run all applicable models, block if ANY flags ===
-        SentimentAnalysisService.AnalysisResult wordFilterResult = null;
+        SentimentAnalysisService.AnalysisResult analysis = sentimentAnalysisService.analyze(content);
+        ModerationDecisionService.ModerationDecision decision =
+                moderationDecisionService.decide(analysis, settings);
 
-        boolean wordFilterBlocks = false;
+        Comment comment = new Comment();
+        comment.setContent(content.trim());
+        comment.setAuthor(author);
+        comment.setSentiment(decision.sentiment());
+        comment.setConfidenceScore(decision.confidence());
+        comment.setStatus(decision.status());
 
-        // Word-filter ALWAYS runs — it's fast, free, and catches known bad words
-        wordFilterResult = sentimentAnalysisService.analyze(content);
-        wordFilterBlocks = wordFilterResult.getSentiment() == Sentiment.NEGATIVE;
-        logger.info("Word-filter result: sentiment={}, confidence={}", wordFilterResult.getSentiment(), wordFilterResult.getConfidence());
+        Comment saved = commentRepository.save(comment);
+        logger.info("Comment moderation: status={}, sentiment={}, confidence={}, reason={}",
+                decision.status(), decision.sentiment(), decision.confidence(), decision.reason());
 
-        // Ensemble decision: if ANY model says block → PENDING for review
-        boolean shouldBlock = wordFilterBlocks;
-
-        // Use highest confidence across all models
-        double maxConfidence = 0.0;
-        Sentiment finalSentiment = Sentiment.NEUTRAL;
-        if (wordFilterResult != null) {
-            maxConfidence = Math.max(maxConfidence, wordFilterResult.getConfidence());
-            finalSentiment = wordFilterResult.getSentiment();
-        }
-
-        comment.setSentiment(finalSentiment);
-        comment.setConfidenceScore(maxConfidence);
-
-        // If any model flags OR confidence is below threshold → PENDING for review
-        if (shouldBlock || maxConfidence < threshold) {
-            comment.setStatus(CommentStatus.PENDING);
-        } else {
-            comment.setStatus(CommentStatus.APPROVED);
-        }
-
-        logger.info("Comment moderation: shouldBlock={}, confidence={}, status={}", shouldBlock, maxConfidence, comment.getStatus());
-        return commentRepository.save(comment);
+        return CommentResponse.from(saved, decision.reason());
     }
 
-    public List<Comment> getAllApprovedComments() {
-        return commentRepository.findByStatus(CommentStatus.APPROVED);
+    public List<CommentResponse> getAllApprovedComments() {
+        return commentRepository.findByStatus(CommentStatus.APPROVED).stream()
+                .sorted(Comparator.comparing(Comment::getCreatedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(CommentResponse::from)
+                .collect(Collectors.toList());
     }
 
-    public List<Comment> getPendingComments() {
-        return commentRepository.findByStatus(CommentStatus.PENDING);
+    public List<CommentResponse> getPendingComments() {
+        return commentRepository.findByStatus(CommentStatus.PENDING).stream()
+                .sorted(Comparator.comparing(Comment::getCreatedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(CommentResponse::from)
+                .collect(Collectors.toList());
+    }
+
+    public ModerationDecisionService.ModerationDecision previewDecision(String content) {
+        validateContent(content);
+        AiSettings settings = aiSettingsRepository.findFirstByOrderByIdAsc().orElse(null);
+        SentimentAnalysisService.AnalysisResult analysis = sentimentAnalysisService.analyze(content);
+        return moderationDecisionService.decide(analysis, settings);
     }
 
     @Transactional
-    public Comment moderateComment(Long commentId, boolean approved) {
+    public CommentResponse moderateComment(Long commentId, boolean approved) {
         Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new RuntimeException("Comment not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
 
-        comment.setStatus(approved ? CommentStatus.APPROVED : CommentStatus.REJECTED);
+        CommentStatus newStatus = approved ? CommentStatus.APPROVED : CommentStatus.REJECTED;
+        if (comment.getStatus() != newStatus) {
+            comment.setStatus(newStatus);
+            storeTrainingTokens(comment.getContent(), approved ? "POSITIVE" : "NEGATIVE");
+            sentimentAnalysisService.invalidateLearnedCache();
+        }
 
-        // Store for model training / learning
-        ModerationTrainingData trainingData = new ModerationTrainingData();
-        trainingData.setContent(comment.getContent());
-        trainingData.setLabel(approved ? "POSITIVE" : "NEGATIVE");
-        trainingDataRepository.save(trainingData);
+        return CommentResponse.from(commentRepository.save(comment));
+    }
 
-        return commentRepository.save(comment);
+    private void validateContent(String content) {
+        if (content == null || content.trim().isEmpty()) {
+            throw new IllegalArgumentException("Comment content cannot be empty.");
+        }
+        int maxLen = appProperties.getContent().getMaxCommentLength();
+        if (content.length() > maxLen) {
+            throw new IllegalArgumentException(
+                    "Comment exceeds maximum length of " + maxLen + " characters.");
+        }
+    }
+
+    private void storeTrainingTokens(String content, String label) {
+        String normalized = TextNormalizer.normalize(content);
+        String[] words = normalized.split("\\s+");
+        int stored = 0;
+        for (String word : words) {
+            if (word.length() >= 4 && word.length() <= 48) {
+                ModerationTrainingData data = new ModerationTrainingData();
+                data.setContent(word);
+                data.setLabel(label);
+                trainingDataRepository.save(data);
+                stored++;
+                if (stored >= MAX_TRAINING_TOKENS) {
+                    break;
+                }
+            }
+        }
+        if (stored == 0 && normalized.length() >= 4) {
+            ModerationTrainingData data = new ModerationTrainingData();
+            data.setContent(normalized.substring(0, Math.min(48, normalized.length())));
+            data.setLabel(label);
+            trainingDataRepository.save(data);
+        }
     }
 }
