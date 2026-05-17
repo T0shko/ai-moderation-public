@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -13,36 +12,28 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
 
   late AnimationController _fadeCtrl;
-  late AnimationController _pulseCtrl;
   late Animation<double> _fadeAnim;
 
   @override
   void initState() {
     super.initState();
     _fadeCtrl = AnimationController(
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 700),
       vsync: this,
-    );
-    _pulseCtrl = AnimationController(
-      duration: const Duration(seconds: 3),
-      vsync: this,
-    )..repeat(reverse: true);
-
+    )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
-    _fadeCtrl.forward();
   }
 
   @override
   void dispose() {
     _fadeCtrl.dispose();
-    _pulseCtrl.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -50,53 +41,70 @@ class _LoginScreenState extends State<LoginScreen>
 
   void _login() async {
     if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
-      _showSnackBar('Please fill in all fields', isError: true);
+      _snack('Please fill in all fields', isError: true);
       return;
     }
-
     setState(() => _isLoading = true);
     try {
       final api = Provider.of<ApiService>(context, listen: false);
-      final response = await api.login(
-        _usernameController.text,
-        _passwordController.text,
-      );
-
-      final token = response['accessToken'];
-      final username = response['username'];
-      final roles = List<String>.from(response['roles']);
-      await api.saveToken(token, username, roles);
-
+      // login() persists the full session (access + refresh + expiry).
+      final response =
+          await api.login(_usernameController.text, _passwordController.text);
+      final username = (response['username'] as String?) ?? '';
+      final roles = (response['roles'] as List?)
+              ?.map((e) => e.toString())
+              .toList(growable: false) ??
+          const <String>[];
       if (mounted) {
-        _showSnackBar('Welcome, $username');
-        await Future.delayed(const Duration(milliseconds: 300));
-        _navigateAfterLogin(roles);
+        _snack('Signed in as $username');
+        await Future.delayed(const Duration(milliseconds: 250));
+        _route(roles);
       }
     } catch (e) {
       if (mounted) {
-        final msg = e.toString().replaceFirst('Exception: ', '');
-        _showSnackBar(msg, isError: true);
+        _snack(_friendlyError(e), isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
+  String _friendlyError(Object e) {
+    if (e is ApiException) {
+      switch (e.code) {
+        case 'invalid_credentials':
+          return 'Wrong username or password.';
+        case 'account_locked':
+          return e.message;
+        case 'account_disabled':
+          return 'This account has been disabled.';
+        case 'network_error':
+          return e.message;
+        default:
+          return e.message;
+      }
+    }
+    return e.toString().replaceFirst('Exception: ', '');
+  }
+
+  void _snack(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: GoogleFonts.dmSans(fontSize: 14)),
-        backgroundColor: isError ? AppTheme.error : AppTheme.success,
+        content: Text(
+          message,
+          style: AppTheme.mono(size: 11, color: AppTheme.paperLight),
+        ),
+        backgroundColor: isError ? AppTheme.rust : AppTheme.ink,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
         ),
       ),
     );
   }
 
-  void _navigateAfterLogin(List<String> roles) {
+  void _route(List<String> roles) {
     if (roles.contains('ROLE_ADMIN')) {
       Navigator.pushReplacementNamed(context, '/admin');
     } else if (roles.contains('ROLE_MODERATOR')) {
@@ -109,23 +117,27 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bgDeep,
+      backgroundColor: AppTheme.paper,
       body: NexusBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildHeader(),
-                    const SizedBox(height: 48),
-                    _buildForm(),
-                    const SizedBox(height: 28),
-                    _buildRegisterLink(),
-                  ],
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _masthead(),
+                      const SizedBox(height: 32),
+                      _formCard(),
+                      const SizedBox(height: 18),
+                      _footerRule(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -135,103 +147,122 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildHeader() {
+  Widget _masthead() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AnimatedBuilder(
-          animation: _pulseCtrl,
-          builder: (_, child) {
-            final glow = 0.15 + (_pulseCtrl.value * 0.12);
-            return Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                gradient: AppTheme.warmGradient,
-                borderRadius: BorderRadius.circular(22),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.coral.withValues(alpha: glow),
-                    blurRadius: 30,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.shield_outlined, size: 36, color: Colors.white),
-            );
-          },
-        ),
-        const SizedBox(height: 32),
-        Text(
-          'Moderation',
-          style: GoogleFonts.playfairDisplay(
-            fontSize: 34,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textPrimary,
-            letterSpacing: -0.5,
-          ),
+        Row(
+          children: [
+            Text(
+              'EDITION \u2014 ${DateTime.now().year}',
+              style: AppTheme.label(color: AppTheme.textTertiary),
+            ),
+            const Spacer(),
+            Text(
+              'VOL. II',
+              style: AppTheme.label(color: AppTheme.persimmon),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
+        Container(height: 3, color: AppTheme.ink),
+        const SizedBox(height: 16),
+        RichText(
+          text: TextSpan(
+            style: AppTheme.display(
+              size: 56,
+              weight: FontWeight.w700,
+              letterSpacing: -2,
+              height: 0.95,
+            ),
+            children: [
+              TextSpan(text: 'The '),
+              TextSpan(
+                text: 'Moderation',
+                style: AppTheme.display(
+                  size: 56,
+                  weight: FontWeight.w400,
+                  style: FontStyle.italic,
+                  letterSpacing: -2,
+                  color: AppTheme.persimmon,
+                  height: 0.95,
+                ),
+              ),
+              const TextSpan(text: '\nLedger'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(height: 1, color: AppTheme.hairline),
+        const SizedBox(height: 10),
         Text(
-          'AI-powered content safety',
-          style: GoogleFonts.dmSans(
-            fontSize: 14,
-            color: AppTheme.textTertiary,
-            letterSpacing: 0.5,
+          'A daily review of community discourse \u2014 read, refine, release.',
+          style: AppTheme.body(
+            size: 14,
+            color: AppTheme.textSecondary,
+            style: FontStyle.italic,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildForm() {
+  Widget _formCard() {
     return SurfaceCard(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+      accentColor: AppTheme.persimmon,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Sign In',
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textPrimary,
-            ),
+          Row(
+            children: [
+              Text(
+                '01',
+                style: AppTheme.mono(
+                  size: 10,
+                  color: AppTheme.persimmon,
+                  weight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'SIGN IN \u2014 CREDENTIALS',
+                style: AppTheme.label(color: AppTheme.ink, size: 10),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Enter your credentials to continue',
-            style: GoogleFonts.dmSans(
-              fontSize: 13,
-              color: AppTheme.textTertiary,
-            ),
-          ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 14),
           AppTextField(
             controller: _usernameController,
             label: 'Username',
             prefixIcon: Icons.person_outline,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 22),
           AppTextField(
             controller: _passwordController,
             label: 'Password',
             obscureText: _obscurePassword,
             prefixIcon: Icons.lock_outline,
             onSubmitted: (_) => _login(),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                color: AppTheme.textTertiary,
-                size: 20,
-              ),
-              onPressed: () =>
+            suffixIcon: GestureDetector(
+              onTap: () =>
                   setState(() => _obscurePassword = !_obscurePassword),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: AppTheme.textTertiary,
+                  size: 18,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 26),
           ActionButton(
-            text: 'Sign In',
-            icon: Icons.arrow_forward_rounded,
+            text: 'Enter the Pressroom',
+            icon: Icons.arrow_forward,
             isLoading: _isLoading,
             onPressed: _login,
           ),
@@ -240,27 +271,35 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildRegisterLink() {
-    return TextButton(
-      onPressed: () => Navigator.pushNamed(context, '/register'),
-      child: RichText(
-        text: TextSpan(
-          text: "Don't have an account? ",
-          style: GoogleFonts.dmSans(
-            color: AppTheme.textTertiary,
-            fontSize: 14,
-          ),
-          children: [
-            TextSpan(
-              text: 'Create one',
-              style: GoogleFonts.dmSans(
-                color: AppTheme.primary,
-                fontWeight: FontWeight.w600,
+  Widget _footerRule() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          'No account?',
+          style: AppTheme.body(size: 12, color: AppTheme.textTertiary),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () => Navigator.pushNamed(context, '/register'),
+          child: Container(
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppTheme.ink, width: 1.2),
               ),
             ),
-          ],
+            child: Text(
+              'Take out a subscription',
+              style: AppTheme.body(
+                size: 12,
+                color: AppTheme.ink,
+                weight: FontWeight.w600,
+                style: FontStyle.italic,
+              ),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 }

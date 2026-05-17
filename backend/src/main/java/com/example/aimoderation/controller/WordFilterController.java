@@ -14,7 +14,6 @@ import java.util.Set;
  */
 @RestController
 @RequestMapping("/api/filters")
-@CrossOrigin(origins = "*")
 public class WordFilterController {
 
     @Autowired

@@ -7,16 +7,17 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * REST controller for AI Chat functionality.
- * All endpoints are free - uses HuggingFace free tier, OpenNLP (local), or combined.
+ * Uses Groq (optional free key), HuggingFace free tier, OpenNLP (local), or combined.
  */
 @RestController
 @RequestMapping("/api/chat")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class AiChatController {
 
     @Autowired
@@ -25,7 +26,7 @@ public class AiChatController {
     /**
      * Send a message to the AI chatbot.
      *
-     * @param request  { "message": "...", "provider": "huggingface|opennlp|combined" }
+     * @param request  { "message": "...", "provider": "groq|huggingface|opennlp|combined" }
      * @param userDetails authenticated user
      * @return AI response with metadata
      */
@@ -80,13 +81,35 @@ public class AiChatController {
      */
     @GetMapping("/providers")
     public ResponseEntity<?> getProviders() {
+        List<Map<String, Object>> providers = new ArrayList<>();
+        providers.add(new LinkedHashMap<>(Map.of(
+                "id", "combined",
+                "name", "Combined (recommended)",
+                "description", aiChatService.isGroqConfigured()
+                        ? "Uses Groq for general chat when configured; otherwise HuggingFace + local NLP."
+                        : "Set GROQ_API_KEY for ChatGPT-style replies; otherwise HuggingFace + local NLP.",
+                "free", true)));
+        providers.add(new LinkedHashMap<>(Map.of(
+                "id", "groq",
+                "name", "Groq only",
+                "description", aiChatService.isGroqConfigured()
+                        ? "Llama via Groq — free API key from console.groq.com"
+                        : "Add GROQ_API_KEY (free) to enable this provider.",
+                "free", true,
+                "configured", aiChatService.isGroqConfigured())));
+        providers.add(Map.of(
+                "id", "huggingface",
+                "name", "HuggingFace AI",
+                "description", "Free conversational models (DialoGPT, BlenderBot)",
+                "free", true));
+        providers.add(Map.of(
+                "id", "opennlp",
+                "name", "Local NLP",
+                "description", "OpenNLP and moderation knowledge base only",
+                "free", true));
         return ResponseEntity.ok(Map.of(
-                "providers", List.of(
-                        Map.of("id", "combined", "name", "Combined (All Models)", "description", "Merges HuggingFace AI with local NLP analysis for the best results", "free", true),
-                        Map.of("id", "huggingface", "name", "HuggingFace AI", "description", "Free conversational AI models (DialoGPT, BlenderBot)", "free", true),
-                        Map.of("id", "opennlp", "name", "Local NLP", "description", "OpenNLP-powered local analysis with knowledge base", "free", true)
-                ),
-                "default", "combined"
-        ));
+                "providers", providers,
+                "default", "combined",
+                "groqConfigured", aiChatService.isGroqConfigured()));
     }
 }

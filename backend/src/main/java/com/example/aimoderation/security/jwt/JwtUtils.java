@@ -2,6 +2,8 @@ package com.example.aimoderation.security.jwt;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.List;
+import java.util.UUID;
 
 import javax.crypto.SecretKey;
 
@@ -12,75 +14,127 @@ import io.jsonwebtoken.security.SignatureException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
 
+/**
+ * Signs and validates access JWTs.
+ *
+ * Hardening:
+ *   - HS512 signing key with strict minimum length (rejects weak secrets).
+ *   - Short expiry by default (15 min); refresh tokens carry the long session.
+ *   - Standard claims (iss, aud, sub, iat, exp, jti) plus role claim.
+ *   - Specific exceptions surface to callers so they can map to 401/403 codes
+ *     instead of a single "invalid" bucket.
+ */
 @Component
 public class JwtUtils {
     private static final Logger logger = LoggerFactory.getLogger(JwtUtils.class);
+    private static final int MIN_SECRET_BYTES = 64; // 512 bits — required by HS512
 
     @Value("${jwt.secret}")
     private String jwtSecret;
 
-    private static final int JWT_EXPIRATION_MS = 86400000; // 24 hours
+    @Value("${jwt.access.ttl-ms:900000}") // 15 minutes
+    private long accessTokenTtlMs;
+
+    @Value("${jwt.issuer:ai-moderation}")
+    private String issuer;
+
+    @Value("${jwt.audience:ai-moderation-app}")
+    private String audience;
+
+    @Value("${jwt.clock-skew-seconds:30}")
+    private long clockSkewSeconds;
 
     private SecretKey signingKey;
 
     @PostConstruct
     public void init() {
-        // Build the key once at startup — fail fast if secret is bad
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalStateException(
+                    "jwt.secret is not configured. Set the JWT_SECRET environment variable.");
+        }
         byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
-        // Pad to 64 bytes (512 bits) if shorter, so HMAC-SHA512 is always used
-        if (keyBytes.length < 64) {
-            byte[] padded = new byte[64];
-            System.arraycopy(keyBytes, 0, padded, 0, keyBytes.length);
-            // Fill remainder with hash of the original to avoid zero-padding weakness
-            for (int i = keyBytes.length; i < 64; i++) {
-                padded[i] = keyBytes[i % keyBytes.length];
-            }
-            keyBytes = padded;
+        if (keyBytes.length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException(
+                    "jwt.secret is too short. Provide at least " + MIN_SECRET_BYTES
+                            + " bytes (got " + keyBytes.length + "). "
+                            + "Generate one with: openssl rand -base64 64");
         }
         signingKey = Keys.hmacShaKeyFor(keyBytes);
-        logger.info("JWT signing key initialized successfully");
+        logger.info("JWT signing key initialized (issuer='{}', audience='{}', access-ttl={}s)",
+                issuer, audience, accessTokenTtlMs / 1000);
     }
 
-    public String generateJwtToken(Authentication authentication) {
-        UserDetailsImpl userPrincipal = (UserDetailsImpl) authentication.getPrincipal();
+    public long getAccessTokenTtlSeconds() {
+        return accessTokenTtlMs / 1000;
+    }
+
+    public String generateAccessToken(UserDetailsImpl user) {
+        Date now = new Date();
+        Date exp = new Date(now.getTime() + accessTokenTtlMs);
+
+        List<String> roles = user.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .toList();
 
         return Jwts.builder()
-                .subject(userPrincipal.getUsername())
-                .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + JWT_EXPIRATION_MS))
-                .signWith(signingKey)
+                .id(UUID.randomUUID().toString())
+                .issuer(issuer)
+                .audience().add(audience).and()
+                .subject(user.getUsername())
+                .claim("uid", user.getId())
+                .claim("roles", roles)
+                .issuedAt(now)
+                .expiration(exp)
+                .signWith(signingKey, Jwts.SIG.HS512)
                 .compact();
     }
 
-    public String getUserNameFromJwtToken(String token) {
+    public Jws<Claims> parse(String token) {
         return Jwts.parser()
                 .verifyWith(signingKey)
+                .requireIssuer(issuer)
+                .requireAudience(audience)
+                .clockSkewSeconds(clockSkewSeconds)
                 .build()
-                .parseSignedClaims(token)
-                .getPayload()
-                .getSubject();
+                .parseSignedClaims(token);
+    }
+
+    public String getUserNameFromJwtToken(String token) {
+        return parse(token).getPayload().getSubject();
+    }
+
+    /** Returns a validation result with a specific failure code, never throws. */
+    public Validation validate(String authToken) {
+        try {
+            parse(authToken);
+            return Validation.ok();
+        } catch (ExpiredJwtException e) {
+            return Validation.fail("token_expired");
+        } catch (SignatureException e) {
+            logger.warn("Invalid JWT signature");
+            return Validation.fail("invalid_signature");
+        } catch (MalformedJwtException e) {
+            return Validation.fail("malformed_token");
+        } catch (UnsupportedJwtException e) {
+            return Validation.fail("unsupported_token");
+        } catch (IllegalArgumentException e) {
+            return Validation.fail("empty_token");
+        } catch (JwtException e) {
+            return Validation.fail("invalid_token");
+        }
     }
 
     public boolean validateJwtToken(String authToken) {
-        try {
-            Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(authToken);
-            return true;
-        } catch (SignatureException e) {
-            logger.error("Invalid JWT signature: {}", e.getMessage());
-        } catch (MalformedJwtException e) {
-            logger.error("Invalid JWT token: {}", e.getMessage());
-        } catch (ExpiredJwtException e) {
-            logger.error("JWT token is expired: {}", e.getMessage());
-        } catch (UnsupportedJwtException e) {
-            logger.error("JWT token is unsupported: {}", e.getMessage());
-        } catch (IllegalArgumentException e) {
-            logger.error("JWT claims string is empty: {}", e.getMessage());
-        }
-        return false;
+        return validate(authToken).valid();
+    }
+
+    public record Validation(boolean valid, String code) {
+        public static Validation ok() { return new Validation(true, null); }
+        public static Validation fail(String code) { return new Validation(false, code); }
     }
 }

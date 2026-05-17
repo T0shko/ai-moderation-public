@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -65,30 +64,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bgDeep,
+      backgroundColor: AppTheme.paper,
       body: NexusBackground(
         child: SafeArea(
           child: Column(
             children: [
-              _buildHeader(),
+              _masthead(),
               Expanded(
                 child: _isLoading
-                    ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                            color: AppTheme.ink, strokeWidth: 1.8),
+                      )
                     : SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
                         child: Column(
                           children: [
-                            _buildProfileCard(),
-                            const SizedBox(height: 14),
-                            _buildModerationDefaults(),
-                            const SizedBox(height: 14),
-                            _buildChatDefaults(),
-                            const SizedBox(height: 14),
-                            _buildContentDefaults(),
-                            const SizedBox(height: 14),
-                            _buildNotificationDefaults(),
-                            const SizedBox(height: 20),
-                            _buildDangerZone(),
+                            _profileCard(),
+                            const SizedBox(height: 16),
+                            _moderationCard(),
+                            const SizedBox(height: 16),
+                            _chatCard(),
+                            const SizedBox(height: 16),
+                            _contentCard(),
+                            const SizedBox(height: 16),
+                            _notificationsCard(),
+                            const SizedBox(height: 16),
+                            _sessionCard(),
                           ],
                         ),
                       ),
@@ -100,34 +102,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _masthead() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: AppTheme.bgSecondary.withValues(alpha: 0.7),
-        border: const Border(bottom: BorderSide(color: AppTheme.borderDefault)),
+      decoration: const BoxDecoration(
+        color: AppTheme.paperLight,
+        border: Border(bottom: BorderSide(color: AppTheme.ink, width: 2)),
       ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
       child: Row(
         children: [
-          AppIconButton(icon: Icons.arrow_back_rounded, onPressed: () => Navigator.pop(context)),
-          const SizedBox(width: 14),
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              gradient: AppTheme.warmGradient,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: AppTheme.glow(AppTheme.coral, 0.2),
-            ),
-            child: const Icon(Icons.settings_outlined, color: Colors.white, size: 22),
+          AppIconButton(
+            icon: Icons.arrow_back,
+            onPressed: () => Navigator.pop(context),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Settings', style: GoogleFonts.playfairDisplay(fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
-                Text('Configuration', style: GoogleFonts.dmSans(fontSize: 12, color: AppTheme.textTertiary)),
+                Text('§ EDITORIAL STYLE',
+                    style: AppTheme.label(color: AppTheme.textTertiary)),
+                const SizedBox(height: 2),
+                Text('House Settings',
+                    style: AppTheme.display(
+                      size: 22,
+                      weight: FontWeight.w700,
+                      letterSpacing: -0.6,
+                    )),
               ],
             ),
           ),
@@ -136,25 +137,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildProfileCard() {
-    final roleStr = _roles.map((r) => r.replaceFirst('ROLE_', '')).join(', ');
+  Widget _profileCard() {
+    final roleStr =
+        _roles.map((r) => r.replaceFirst('ROLE_', '')).join(', ');
     final roleColor = _roles.contains('ROLE_ADMIN')
-        ? AppTheme.coral
+        ? AppTheme.persimmon
         : _roles.contains('ROLE_MODERATOR')
-            ? AppTheme.amber
-            : AppTheme.info;
+            ? AppTheme.honey
+            : AppTheme.azure;
+    final initial = (_username ?? '?').substring(0, 1).toUpperCase();
 
     return SurfaceCard(
       padding: const EdgeInsets.all(20),
-      accentGradient: AppTheme.warmGradient,
+      accentColor: roleColor,
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: roleColor.withValues(alpha: 0.15),
-            child: Text(
-              (_username ?? '?').substring(0, 1).toUpperCase(),
-              style: GoogleFonts.playfairDisplay(color: roleColor, fontSize: 22, fontWeight: FontWeight.w700),
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: AppTheme.paperLight,
+              border: Border.all(color: AppTheme.ink, width: 1.2),
+            ),
+            child: Center(
+              child: Text(
+                initial,
+                style: AppTheme.display(
+                  size: 36,
+                  weight: FontWeight.w700,
+                  letterSpacing: -1.5,
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 16),
@@ -162,12 +175,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  _username ?? 'Loading...',
-                  style: GoogleFonts.playfairDisplay(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                Text(_username ?? 'Loading…',
+                    style: AppTheme.display(
+                      size: 22,
+                      weight: FontWeight.w700,
+                      letterSpacing: -0.6,
+                    )),
+                const SizedBox(height: 6),
+                StatusBadge(
+                  text: roleStr.isEmpty ? 'READER' : roleStr,
+                  color: roleColor,
+                  showPulse: true,
                 ),
-                const SizedBox(height: 4),
-                StatusBadge(text: roleStr, color: roleColor, showPulse: true),
               ],
             ),
           ),
@@ -176,88 +195,154 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildModerationDefaults() {
+  Widget _moderationCard() {
     return SurfaceCard(
       padding: const EdgeInsets.all(20),
+      accentColor: AppTheme.ink,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(title: 'Moderation', subtitle: 'Auto-moderation behavior'),
-          _buildSliderRow('Confidence Threshold', _threshold, (v) => setState(() => _threshold = v)),
-          const Divider(color: AppTheme.borderDefault, height: 24),
-          _buildSwitchRow('Auto-approve positive', 'Automatically approve positive sentiment', _autoApprovePositive, (v) => setState(() => _autoApprovePositive = v)),
-          _buildSwitchRow('Auto-reject high confidence', 'Reject when flagged above threshold', _autoRejectHighConf, (v) => setState(() => _autoRejectHighConf = v)),
+          SectionHeader(
+            title: 'Moderation',
+            subtitle: 'Auto-moderation behavior.',
+            index: '01',
+          ),
+          _sliderRow('Confidence Threshold', _threshold,
+              (v) => setState(() => _threshold = v)),
+          const SizedBox(height: 8),
+          const Divider(color: AppTheme.hairline, height: 1),
+          const SizedBox(height: 8),
+          _switchRow(
+              'Auto-approve positive',
+              'Set in print when positive sentiment is high.',
+              _autoApprovePositive,
+              (v) => setState(() => _autoApprovePositive = v)),
+          _switchRow(
+              'Auto-reject high confidence',
+              'Spike when flagged above threshold.',
+              _autoRejectHighConf,
+              (v) => setState(() => _autoRejectHighConf = v)),
           if (_autoRejectHighConf)
-            _buildSliderRow('Auto-reject Threshold', _autoRejectThreshold, (v) => setState(() => _autoRejectThreshold = v)),
+            _sliderRow('Auto-reject Threshold', _autoRejectThreshold,
+                (v) => setState(() => _autoRejectThreshold = v)),
         ],
       ),
     );
   }
 
-  Widget _buildChatDefaults() {
+  Widget _chatCard() {
     return SurfaceCard(
       padding: const EdgeInsets.all(20),
+      accentColor: AppTheme.persimmon,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(title: 'AI Chat', subtitle: 'Chat configuration'),
-          _buildSwitchRow('Chat Enabled', 'Allow users to use AI chat', _chatEnabled, (v) => setState(() => _chatEnabled = v)),
-          _buildInfoRow('Max Message Length', '$_maxMessageLength chars'),
-          _buildInfoRow('Rate Limit', '$_rateLimitPerMinute/min'),
-          _buildInfoRow('Default Provider', _defaultProvider),
+          SectionHeader(
+            title: 'AI Concierge',
+            subtitle: 'Chat configuration.',
+            index: '02',
+          ),
+          _switchRow(
+              'Concierge Enabled',
+              'Allow readers to use the AI concierge.',
+              _chatEnabled,
+              (v) => setState(() => _chatEnabled = v)),
+          _infoRow('Max Message Length', '$_maxMessageLength chars'),
+          _infoRow('Rate Limit', '$_rateLimitPerMinute / min'),
+          _infoRow('Default Provider', _defaultProvider),
         ],
       ),
     );
   }
 
-  Widget _buildContentDefaults() {
+  Widget _contentCard() {
     return SurfaceCard(
       padding: const EdgeInsets.all(20),
+      accentColor: AppTheme.olive,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(title: 'Content', subtitle: 'User content rules'),
-          _buildInfoRow('Max Comment Length', '$_maxCommentLength chars'),
-          const Divider(color: AppTheme.borderDefault, height: 24),
-          _buildSwitchRow('Allow Anonymous', 'Let non-logged-in users comment', _allowAnonymous, (v) => setState(() => _allowAnonymous = v)),
-          _buildSwitchRow('Moderate New Users', 'Require moderation for first $_newUserThreshold posts', _requireModerationNewUsers, (v) => setState(() => _requireModerationNewUsers = v)),
+          SectionHeader(
+            title: 'Content',
+            subtitle: 'Reader content rules.',
+            index: '03',
+          ),
+          _infoRow('Max Dispatch Length', '$_maxCommentLength chars'),
+          const SizedBox(height: 6),
+          const Divider(color: AppTheme.hairline, height: 1),
+          const SizedBox(height: 6),
+          _switchRow(
+              'Allow Anonymous',
+              'Let non-logged-in readers comment.',
+              _allowAnonymous,
+              (v) => setState(() => _allowAnonymous = v)),
+          _switchRow(
+              'Moderate New Readers',
+              'Hold first $_newUserThreshold dispatches for review.',
+              _requireModerationNewUsers,
+              (v) => setState(() => _requireModerationNewUsers = v)),
         ],
       ),
     );
   }
 
-  Widget _buildNotificationDefaults() {
+  Widget _notificationsCard() {
     return SurfaceCard(
       padding: const EdgeInsets.all(20),
+      accentColor: AppTheme.honey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(title: 'Notifications', subtitle: 'Alert preferences'),
-          _buildSwitchRow('Email on Flagged', 'Send email when content is flagged', _emailOnFlagged, (v) => setState(() => _emailOnFlagged = v)),
-          _buildSwitchRow('Dashboard Alerts', 'Show alerts on dashboard', _dashboardAlerts, (v) => setState(() => _dashboardAlerts = v)),
+          SectionHeader(
+            title: 'Notifications',
+            subtitle: 'How the desk reaches you.',
+            index: '04',
+          ),
+          _switchRow(
+              'Email on Flagged',
+              'Send an email when content is flagged.',
+              _emailOnFlagged,
+              (v) => setState(() => _emailOnFlagged = v)),
+          _switchRow(
+              'Dashboard Alerts',
+              'Show alerts on the editor\u2019s desk.',
+              _dashboardAlerts,
+              (v) => setState(() => _dashboardAlerts = v)),
         ],
       ),
     );
   }
 
-  Widget _buildDangerZone() {
+  Widget _sessionCard() {
     return SurfaceCard(
       padding: const EdgeInsets.all(20),
+      accentColor: AppTheme.rust,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SectionHeader(
             title: 'Session',
-            subtitle: 'Manage your session',
-            trailing: StatusBadge(text: 'ACTIVE', color: AppTheme.success, showPulse: true),
+            subtitle: 'Sign out from this paper.',
+            index: '05',
+            trailing: StatusBadge(
+              text: 'ACTIVE',
+              color: AppTheme.olive,
+              showPulse: true,
+            ),
           ),
-          ActionButton(text: 'Sign Out', icon: Icons.logout_rounded, onPressed: _logout, gradient: AppTheme.dangerGradient),
+          ActionButton(
+            text: 'Sign out',
+            icon: Icons.logout,
+            onPressed: _logout,
+            backgroundColor: AppTheme.rust,
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSwitchRow(String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
+  Widget _switchRow(String title, String subtitle, bool value,
+      ValueChanged<bool> onChanged) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -266,19 +351,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                Text(title,
+                    style: AppTheme.body(
+                      size: 14,
+                      color: AppTheme.ink,
+                      weight: FontWeight.w600,
+                    )),
                 const SizedBox(height: 2),
-                Text(subtitle, style: GoogleFonts.dmSans(fontSize: 12, color: AppTheme.textTertiary)),
+                Text(subtitle,
+                    style: AppTheme.body(
+                      size: 12,
+                      color: AppTheme.textTertiary,
+                      style: FontStyle.italic,
+                    )),
               ],
             ),
           ),
-          Switch(value: value, onChanged: onChanged, activeTrackColor: AppTheme.primary, inactiveTrackColor: AppTheme.bgTertiary),
+          _PressSwitch(value: value, onChanged: onChanged),
         ],
       ),
     );
   }
 
-  Widget _buildSliderRow(String title, double value, ValueChanged<double> onChanged) {
+  Widget _sliderRow(
+      String title, double value, ValueChanged<double> onChanged) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -286,51 +382,100 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           Row(
             children: [
-              Text(title, style: GoogleFonts.dmSans(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+              Text(title,
+                  style: AppTheme.body(
+                    size: 14,
+                    color: AppTheme.ink,
+                    weight: FontWeight.w600,
+                  )),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                  border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
+                  color: AppTheme.persimmonSoft,
+                  border: Border.all(color: AppTheme.persimmon),
                 ),
-                child: Text(value.toStringAsFixed(2), style: GoogleFonts.dmSans(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.primary)),
+                child: Text(
+                  value.toStringAsFixed(2),
+                  style: AppTheme.mono(
+                    size: 11,
+                    color: AppTheme.persimmon,
+                    weight: FontWeight.w700,
+                  ),
+                ),
               ),
             ],
           ),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: AppTheme.primary,
-              inactiveTrackColor: AppTheme.bgTertiary,
-              thumbColor: AppTheme.primary,
-              overlayColor: AppTheme.primary.withValues(alpha: 0.15),
-              trackHeight: 4,
-            ),
-            child: Slider(value: value, min: 0.0, max: 1.0, divisions: 20, onChanged: onChanged),
+          Slider(
+            value: value,
+            min: 0,
+            max: 1,
+            divisions: 20,
+            onChanged: onChanged,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _infoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Text(label, style: GoogleFonts.dmSans(fontSize: 14, color: AppTheme.textSecondary)),
+          Text(label,
+              style: AppTheme.body(size: 14, color: AppTheme.textSecondary)),
           const Spacer(),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: AppTheme.bgTertiary,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-              border: Border.all(color: AppTheme.borderDefault),
+              color: AppTheme.paper,
+              border: Border.all(color: AppTheme.hairline),
             ),
-            child: Text(value, style: GoogleFonts.dmSans(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+            child: Text(
+              value,
+              style: AppTheme.mono(
+                size: 11,
+                color: AppTheme.ink,
+                weight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PressSwitch extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  const _PressSwitch({required this.value, required this.onChanged});
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        width: 44,
+        height: 24,
+        decoration: BoxDecoration(
+          color: value ? AppTheme.ink : AppTheme.paperLight,
+          border: Border.all(color: AppTheme.ink, width: 1.2),
+        ),
+        child: AnimatedAlign(
+          duration: const Duration(milliseconds: 140),
+          alignment:
+              value ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            margin: const EdgeInsets.all(2),
+            width: 18,
+            height: 18,
+            color: value ? AppTheme.persimmon : AppTheme.ink,
+          ),
+        ),
       ),
     );
   }

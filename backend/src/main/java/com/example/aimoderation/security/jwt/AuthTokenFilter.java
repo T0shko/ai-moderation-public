@@ -28,27 +28,27 @@ public class AuthTokenFilter extends OncePerRequestFilter {
 
     private static final Logger logger = LoggerFactory.getLogger(AuthTokenFilter.class);
 
-    // Paths that never need JWT processing
+    /** When a token is rejected by this filter we surface a machine-readable reason. */
+    public static final String REASON_REQUEST_ATTR = "auth.failure.reason";
+
     private static final Set<String> PUBLIC_PREFIXES = Set.of(
             "/api/auth/",
             "/api/vision-lab",
+            "/actuator/health",
             "/error"
     );
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        // Skip ALL OPTIONS requests (CORS preflight)
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
-        // Skip public endpoints
         String path = request.getRequestURI();
         for (String prefix : PUBLIC_PREFIXES) {
             if (path.startsWith(prefix)) {
                 return true;
             }
         }
-        // Skip GET /api/comments (public feed)
         if ("GET".equalsIgnoreCase(request.getMethod()) && "/api/comments".equals(path)) {
             return true;
         }
@@ -60,18 +60,28 @@ public class AuthTokenFilter extends OncePerRequestFilter {
             FilterChain filterChain) throws ServletException, IOException {
         try {
             String jwt = parseJwt(request);
-            if (jwt != null && jwtUtils.validateJwtToken(jwt)) {
-                String username = jwtUtils.getUserNameFromJwtToken(jwt);
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+            if (jwt != null) {
+                JwtUtils.Validation v = jwtUtils.validate(jwt);
+                if (v.valid()) {
+                    String username = jwtUtils.getUserNameFromJwtToken(jwt);
+                    UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities());
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    userDetails, null, userDetails.getAuthorities());
+                    authentication.setDetails(
+                            new WebAuthenticationDetailsSource().buildDetails(request));
 
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                } else {
+                    // Make the reason available to the entry point so the response body
+                    // is precise (clients use this to decide whether to refresh).
+                    request.setAttribute(REASON_REQUEST_ATTR, v.code());
+                }
             }
         } catch (Exception e) {
             logger.error("Cannot set user authentication: {}", e.getMessage());
+            request.setAttribute(REASON_REQUEST_ATTR, "authentication_failed");
         }
 
         filterChain.doFilter(request, response);

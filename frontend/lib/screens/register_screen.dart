@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -27,11 +26,10 @@ class _RegisterScreenState extends State<RegisterScreen>
   void initState() {
     super.initState();
     _animController = AnimationController(
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 700),
       vsync: this,
-    );
+    )..forward();
     _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
-    _animController.forward();
   }
 
   @override
@@ -45,46 +43,68 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   void _register() async {
     if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
-      _showSnackBar('Please fill in all fields', isError: true);
+      _snack('Please fill in all fields', isError: true);
       return;
     }
     if (_passwordController.text != _confirmPasswordController.text) {
-      _showSnackBar('Passwords do not match', isError: true);
+      _snack('Passwords do not match', isError: true);
       return;
     }
-    if (_passwordController.text.length < 6) {
-      _showSnackBar('Password must be at least 6 characters', isError: true);
+    if (_passwordController.text.length < 8) {
+      _snack('Password must be at least 8 characters', isError: true);
       return;
     }
-
+    if (!RegExp(r'^(?=.*[A-Za-z])(?=.*\d).+$').hasMatch(_passwordController.text)) {
+      _snack('Password must include at least one letter and one number',
+          isError: true);
+      return;
+    }
     setState(() => _isLoading = true);
     try {
       final api = Provider.of<ApiService>(context, listen: false);
       await api.register(_usernameController.text, _passwordController.text);
-
       if (mounted) {
-        _showSnackBar('Account created!');
-        await Future.delayed(const Duration(milliseconds: 600));
+        _snack('Account created');
+        await Future.delayed(const Duration(milliseconds: 500));
         if (mounted) Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
-        _showSnackBar('Registration failed. Try another username.', isError: true);
+        _snack(_friendlyError(e), isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
+  String _friendlyError(Object e) {
+    if (e is ApiException) {
+      switch (e.code) {
+        case 'username_taken':
+          return 'That username is already taken.';
+        case 'validation_failed':
+          return e.message;
+        case 'network_error':
+          return e.message;
+        default:
+          return e.message;
+      }
+    }
+    return e.toString().replaceFirst('Exception: ', '');
+  }
+
+  void _snack(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: GoogleFonts.dmSans(fontSize: 14)),
-        backgroundColor: isError ? AppTheme.error : AppTheme.success,
+        content: Text(
+          message,
+          style: AppTheme.mono(size: 11, color: AppTheme.paperLight),
+        ),
+        backgroundColor: isError ? AppTheme.rust : AppTheme.ink,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
         ),
       ),
     );
@@ -93,36 +113,47 @@ class _RegisterScreenState extends State<RegisterScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bgDeep,
+      backgroundColor: AppTheme.paper,
       body: NexusBackground(
         child: SafeArea(
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.all(12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: AppIconButton(
-                    icon: Icons.arrow_back,
-                    onPressed: () => Navigator.pop(context),
-                  ),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Row(
+                  children: [
+                    AppIconButton(
+                      icon: Icons.arrow_back,
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    const SizedBox(width: 14),
+                    Text(
+                      'SUBSCRIPTION FORM',
+                      style: AppTheme.label(color: AppTheme.textSecondary),
+                    ),
+                  ],
                 ),
               ),
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: FadeTransition(
-                    opacity: _fadeAnim,
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 16),
-                        _buildHeader(),
-                        const SizedBox(height: 36),
-                        _buildForm(),
-                        const SizedBox(height: 24),
-                        _buildLoginLink(),
-                        const SizedBox(height: 40),
-                      ],
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 440),
+                      child: FadeTransition(
+                        opacity: _fadeAnim,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _masthead(),
+                            const SizedBox(height: 28),
+                            _formCard(),
+                            const SizedBox(height: 20),
+                            _footer(),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -134,94 +165,163 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  Widget _buildHeader() {
+  Widget _masthead() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            gradient: AppTheme.successGradient,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: AppTheme.glow(AppTheme.success, 0.25),
-          ),
-          child: const Icon(Icons.person_add_alt_1_outlined, size: 30, color: Colors.white),
+        Row(
+          children: [
+            Text(
+              'NEW SUBSCRIBER',
+              style: AppTheme.label(color: AppTheme.persimmon),
+            ),
+            const Spacer(),
+            Text(
+              'PRINT ONLY \u2014 NO ADS',
+              style: AppTheme.label(color: AppTheme.textTertiary),
+            ),
+          ],
         ),
-        const SizedBox(height: 24),
-        Text(
-          'Create Account',
-          style: GoogleFonts.playfairDisplay(
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textPrimary,
+        const SizedBox(height: 8),
+        Container(height: 3, color: AppTheme.ink),
+        const SizedBox(height: 16),
+        RichText(
+          text: TextSpan(
+            style: AppTheme.display(
+              size: 44,
+              weight: FontWeight.w700,
+              letterSpacing: -1.5,
+              height: 0.98,
+            ),
+            children: [
+              TextSpan(text: 'Take out a '),
+              TextSpan(
+                text: 'subscription',
+                style: AppTheme.display(
+                  size: 44,
+                  weight: FontWeight.w400,
+                  style: FontStyle.italic,
+                  letterSpacing: -1.5,
+                  color: AppTheme.persimmon,
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
-          'Join the moderation network',
-          style: GoogleFonts.dmSans(fontSize: 13, color: AppTheme.textTertiary),
+          'Pick a name, choose a passphrase, become part of the editorial staff.',
+          style: AppTheme.body(
+            size: 13,
+            color: AppTheme.textSecondary,
+            style: FontStyle.italic,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildForm() {
+  Widget _formCard() {
     return SurfaceCard(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+      accentColor: AppTheme.ink,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppTextField(controller: _usernameController, label: 'Username', prefixIcon: Icons.person_outline),
-          const SizedBox(height: 16),
+          Text(
+            'CREDENTIALS',
+            style: AppTheme.label(color: AppTheme.ink, size: 10),
+          ),
+          const SizedBox(height: 14),
+          AppTextField(
+            controller: _usernameController,
+            label: 'Username',
+            prefixIcon: Icons.person_outline,
+          ),
+          const SizedBox(height: 22),
           AppTextField(
             controller: _passwordController,
             label: 'Password',
             obscureText: _obscurePassword,
             prefixIcon: Icons.lock_outline,
-            suffixIcon: IconButton(
-              icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: AppTheme.textTertiary, size: 20),
-              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            suffixIcon: GestureDetector(
+              onTap: () =>
+                  setState(() => _obscurePassword = !_obscurePassword),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: AppTheme.textTertiary,
+                  size: 18,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 22),
           AppTextField(
             controller: _confirmPasswordController,
             label: 'Confirm Password',
             obscureText: _obscureConfirm,
             prefixIcon: Icons.lock_outline,
             onSubmitted: (_) => _register(),
-            suffixIcon: IconButton(
-              icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility, color: AppTheme.textTertiary, size: 20),
-              onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+            suffixIcon: GestureDetector(
+              onTap: () =>
+                  setState(() => _obscureConfirm = !_obscureConfirm),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(
+                  _obscureConfirm
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: AppTheme.textTertiary,
+                  size: 18,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 26),
           ActionButton(
-            text: 'Create Account',
-            icon: Icons.arrow_forward_rounded,
+            text: 'Stamp & Submit',
+            icon: Icons.fiber_manual_record,
             isLoading: _isLoading,
             onPressed: _register,
-            gradient: AppTheme.successGradient,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildLoginLink() {
-    return TextButton(
-      onPressed: () => Navigator.pop(context),
-      child: RichText(
-        text: TextSpan(
-          text: 'Already have an account? ',
-          style: GoogleFonts.dmSans(color: AppTheme.textTertiary, fontSize: 14),
-          children: [
-            TextSpan(
-              text: 'Sign In',
-              style: GoogleFonts.dmSans(color: AppTheme.primary, fontWeight: FontWeight.w600),
-            ),
-          ],
+  Widget _footer() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          'Already a subscriber?',
+          style: AppTheme.body(size: 12, color: AppTheme.textTertiary),
         ),
-      ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: Container(
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppTheme.ink, width: 1.2),
+              ),
+            ),
+            child: Text(
+              'Sign in',
+              style: AppTheme.body(
+                size: 12,
+                color: AppTheme.ink,
+                weight: FontWeight.w600,
+                style: FontStyle.italic,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

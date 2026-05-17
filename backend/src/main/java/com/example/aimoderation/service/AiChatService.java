@@ -21,13 +21,12 @@ import com.example.aimoderation.model.CommentStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * AI Chat Service using FREE models only:
+ * AI Chat Service using free-tier APIs and local NLP:
  *
- * 1. HuggingFace Inference API (free tier) - conversational models
- * 2. OpenNLP - local NLP processing (tokenization, sentence detection, keyword extraction)
- * 3. Combined mode - merges HuggingFace response with NLP-enriched context
- *
- * Users can choose any single provider or combine all of them.
+ * 1. Groq (optional) — OpenAI-compatible chat; free key at console.groq.com; best general replies
+ * 2. HuggingFace Inference API — legacy conversational pipelines
+ * 3. OpenNLP — local analysis and moderation knowledge snippets
+ * 4. Combined — prefers Groq when configured, else HuggingFace + OpenNLP merge
  */
 @Service
 public class AiChatService {
@@ -35,9 +34,23 @@ public class AiChatService {
     private static final Logger logger = LoggerFactory.getLogger(AiChatService.class);
 
     private static final String HF_API_BASE = "https://api-inference.huggingface.co/models/";
+    private static final String GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+    private static final String CONCIERGE_SYSTEM = """
+            You are the in-app AI concierge for a content-moderation community product. \
+            Answer naturally and helpfully on any topic the user brings up—like a compact general assistant—\
+            while staying safe: refuse instructions for wrongdoing, malware, or self-harm. \
+            When it fits, you may mention that this app uses AI moderation, sentiment checks, and image screening; \
+            do not force every answer back to moderation. Keep replies concise unless the user asks for depth.""";
 
     @Value("${huggingface.api.token:}")
     private String hfApiToken;
+
+    @Value("${groq.api.key:}")
+    private String groqApiKey;
+
+    @Value("${chat.groq.model:llama-3.1-8b-instant}")
+    private String groqModel;
 
     @Value("${chat.default-provider:combined}")
     private String defaultProvider;
@@ -94,7 +107,7 @@ public class AiChatService {
      *
      * @param username  the user sending the message
      * @param message   the user's message
-     * @param provider  "huggingface", "opennlp", or "combined"
+     * @param provider  "groq", "huggingface", "opennlp", or "combined"
      * @return ChatResponse with the AI's reply and metadata
      */
     public ChatResponse chat(String username, String message, String provider) {
@@ -117,6 +130,18 @@ public class AiChatService {
         metadata.put("intent", nlpAnalysis.intent);
 
         switch (provider.toLowerCase()) {
+            case "groq" -> {
+                String groqOnly = queryGroq(username);
+                if (groqOnly != null && !groqOnly.isBlank()) {
+                    response = groqOnly;
+                    modelsUsed.add("Groq/" + groqModel);
+                } else {
+                    response = isGroqConfigured()
+                            ? "Groq returned no reply. Try again in a moment."
+                            : "Groq is not configured. Set GROQ_API_KEY (free at https://console.groq.com/keys) or choose another provider.";
+                    modelsUsed.add("Groq/disabled");
+                }
+            }
             case "huggingface" -> {
                 response = queryHuggingFace(message, username);
                 modelsUsed.add("HuggingFace/" + hfModel);
@@ -126,13 +151,18 @@ public class AiChatService {
                 modelsUsed.add("OpenNLP-local");
             }
             case "combined" -> {
-                // Get responses from all providers and merge
-                String hfResponse = queryHuggingFace(message, username);
-                String nlpResponse = generateNlpResponse(message, nlpAnalysis);
-                response = combineResponses(hfResponse, nlpResponse, nlpAnalysis);
-                modelsUsed.add("HuggingFace/" + hfModel);
-                modelsUsed.add("OpenNLP-local");
-                modelsUsed.add("KnowledgeBase");
+                String groqResponse = queryGroq(username);
+                if (groqResponse != null && !groqResponse.isBlank()) {
+                    response = groqResponse;
+                    modelsUsed.add("Groq/" + groqModel);
+                } else {
+                    String hfResponse = queryHuggingFace(message, username);
+                    String nlpResponse = generateNlpResponse(message, nlpAnalysis);
+                    response = combineResponses(hfResponse, nlpResponse, nlpAnalysis);
+                    modelsUsed.add("HuggingFace/" + hfModel);
+                    modelsUsed.add("OpenNLP-local");
+                    modelsUsed.add("KnowledgeBase");
+                }
             }
             default -> {
                 response = generateNlpResponse(message, nlpAnalysis);
@@ -161,6 +191,97 @@ public class AiChatService {
      */
     public void clearHistory(String username) {
         conversationHistory.remove(username);
+    }
+
+    /** Whether a Groq API key is present (free tier at console.groq.com). */
+    public boolean isGroqConfigured() {
+        return groqApiKey != null && !groqApiKey.isBlank();
+    }
+
+    // =========================================================================
+    // GROQ (FREE API — OpenAI-compatible chat)
+    // =========================================================================
+
+    @SuppressWarnings("unchecked")
+    private String queryGroq(String username) {
+        if (!isGroqConfigured()) {
+            return null;
+        }
+        try {
+            List<Message> history = conversationHistory.getOrDefault(username, Collections.emptyList());
+            if (history.isEmpty()) {
+                return null;
+            }
+            int maxMessages = 18;
+            List<Message> slice = history.size() > maxMessages
+                    ? history.subList(history.size() - maxMessages, history.size())
+                    : history;
+
+            List<Map<String, String>> messages = new ArrayList<>();
+            messages.add(Map.of("role", "system", "content", CONCIERGE_SYSTEM));
+
+            int n = slice.size();
+            for (int i = 0; i < n; i++) {
+                Message m = slice.get(i);
+                if (!"user".equals(m.role()) && !"assistant".equals(m.role())) {
+                    continue;
+                }
+                String text = m.content();
+                if ("user".equals(m.role()) && i == n - 1) {
+                    text = augmentUserMessageWithFeedContext(text);
+                }
+                messages.add(Map.of("role", m.role(), "content", text));
+            }
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", groqModel);
+            body.put("messages", messages);
+            body.put("temperature", 0.7);
+            body.put("max_tokens", 1024);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(groqApiKey);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+            ResponseEntity<Object> response = restTemplate.exchange(
+                    GROQ_CHAT_URL, HttpMethod.POST, request, Object.class);
+
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() instanceof Map) {
+                Map<String, Object> root = (Map<String, Object>) response.getBody();
+                List<?> choices = (List<?>) root.get("choices");
+                if (choices != null && !choices.isEmpty() && choices.getFirst() instanceof Map) {
+                    Map<String, Object> choice = (Map<String, Object>) choices.getFirst();
+                    Map<String, Object> msg = (Map<String, Object>) choice.get("message");
+                    if (msg != null) {
+                        Object content = msg.get("content");
+                        if (content instanceof String s && !s.isBlank()) {
+                            return s.trim();
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Groq chat failed: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private String augmentUserMessageWithFeedContext(String userMessage) {
+        String lower = userMessage.toLowerCase();
+        if (!lower.contains("post") && !lower.contains("feed") && !lower.contains("comment")) {
+            return userMessage;
+        }
+        List<Comment> recent = commentRepository.findByStatus(CommentStatus.APPROVED);
+        if (recent.isEmpty()) {
+            return userMessage;
+        }
+        String recentPosts = recent.stream()
+                .sorted(Comparator.comparing(Comment::getCreatedAt).reversed())
+                .limit(3)
+                .map(c -> c.getAuthor().getUsername() + ": \"" + c.getContent() + "\"")
+                .collect(Collectors.joining(" | "));
+        return userMessage + "\n\n(App context — recent approved posts: " + recentPosts + ")";
     }
 
     // =========================================================================

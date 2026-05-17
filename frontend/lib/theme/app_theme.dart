@@ -1,273 +1,317 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// PRISM Design System — Warm Editorial Interface
-/// Charcoal blacks with amber/coral accents, editorial typography
+/// PRESSROOM — editorial risograph design system.
+///
+/// Two-color print feel: warm ink on cream paper, persimmon as the single
+/// punch accent, ledger-green and rust used only for semantic signal.
+/// Typography pairs an italic-friendly serif display with newsprint body
+/// copy and a strict monospace for numerics, badges, IDs and small caps.
 class AppTheme {
-  // ── Signature palette ──────────────────────────────────────────
-  static const Color coral = Color(0xFFFF6B6B);
-  static const Color amber = Color(0xFFFFAB40);
-  static const Color peach = Color(0xFFFFCC80);
-  static const Color mint = Color(0xFF66BB6A);
-  static const Color sky = Color(0xFF42A5F5);
-  static const Color plum = Color(0xFFAB47BC);
-  static const Color slate = Color(0xFF78909C);
+  // ── Ink & paper ────────────────────────────────────────────────
+  static const Color ink = Color(0xFF1A1614);
+  static const Color inkSoft = Color(0xFF2B2520);
+  static const Color paper = Color(0xFFF4EFE3);
+  static const Color paperLight = Color(0xFFFBF8F0);
+  static const Color paperDeep = Color(0xFFE7E0CD);
+  static const Color paperInk = Color(0xFFDED5C0);
 
-  // Primary
-  static const Color primary = coral;
-  static const Color primaryLight = Color(0xFFFF8A80);
-  static const Color primaryDark = Color(0xFFE53935);
+  // ── The single accent ──────────────────────────────────────────
+  static const Color persimmon = Color(0xFFD14517);
+  static const Color persimmonSoft = Color(0xFFFBE3D5);
 
-  // Accent
-  static const Color accent = amber;
-  static const Color accentLight = Color(0xFFFFD180);
+  // ── Semantic prints ────────────────────────────────────────────
+  static const Color olive = Color(0xFF4F5D3B);
+  static const Color oliveSoft = Color(0xFFE6E9D7);
+  static const Color rust = Color(0xFF8C2B1F);
+  static const Color rustSoft = Color(0xFFF3D8D2);
+  static const Color honey = Color(0xFFB07A19);
+  static const Color honeySoft = Color(0xFFF1E2BE);
+  static const Color azure = Color(0xFF2E4F73);
+  static const Color azureSoft = Color(0xFFD8E0EA);
 
-  // Semantic
-  static const Color success = mint;
-  static const Color warning = amber;
-  static const Color error = Color(0xFFEF5350);
-  static const Color info = sky;
+  // ── Type / borders ─────────────────────────────────────────────
+  static const Color textPrimary = ink;
+  static const Color textSecondary = Color(0xFF494037);
+  static const Color textTertiary = Color(0xFF7C7367);
+  static const Color hairline = Color(0xFFC9C1AF);
+  static const Color hairlineSoft = Color(0xFFE0D7C3);
 
-  // Backgrounds — warm charcoal
-  static const Color bgDeep = Color(0xFF121212);
-  static const Color bgPrimary = Color(0xFF1A1A1A);
-  static const Color bgSecondary = Color(0xFF222222);
-  static const Color bgTertiary = Color(0xFF2C2C2C);
-  static const Color bgElevated = Color(0xFF333333);
+  // ── Compatibility aliases (kept so existing screens keep compiling) ──
+  static const Color primary = ink;
+  static const Color primaryLight = inkSoft;
+  static const Color primaryDark = Color(0xFF0E0B09);
+  static const Color accent = persimmon;
+  static const Color success = olive;
+  static const Color warning = honey;
+  static const Color error = rust;
+  static const Color info = azure;
 
-  // Borders
-  static const Color borderDefault = Color(0xFF383838);
-  static const Color borderMuted = Color(0xFF2A2A2A);
-  static const Color borderActive = Color(0xFF4A4A4A);
+  static const Color veridian = olive;
+  static const Color veridianDark = Color(0xFF3A4530);
+  static const Color veridianSoft = oliveSoft;
+  static const Color spice = persimmon;
+  static const Color spiceSoft = persimmonSoft;
+  static const Color rose = persimmon;
+  static const Color mint = olive;
+  static const Color sky = azure;
+  static const Color slate = Color(0xFF6B5F50);
+  static const Color coral = persimmon;
+  static const Color amber = honey;
+  static const Color peach = persimmon;
+  static const Color plum = ink;
 
-  // Text
-  static const Color textPrimary = Color(0xFFF5F5F0);
-  static const Color textSecondary = Color(0xFFB0ADA8);
-  static const Color textTertiary = Color(0xFF757370);
+  static const Color bgDeep = paper;
+  static const Color bgPrimary = paper;
+  static const Color bgSecondary = paperLight;
+  static const Color bgTertiary = paperDeep;
+  static const Color bgElevated = paperLight;
+  static const Color bgInset = paperInk;
+  static const Color borderDefault = hairline;
+  static const Color borderMuted = hairlineSoft;
+  static const Color borderActive = ink;
 
-  // ── Gradients ──────────────────────────────────────────────────
+  // ── Gradients (kept solid-ish for press feel) ──────────────────
   static const LinearGradient primaryGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [coral, Color(0xFFFF8A65)],
+    colors: [ink, inkSoft],
   );
-
   static const LinearGradient accentGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [amber, Color(0xFFFF7043)],
+    colors: [persimmon, Color(0xFFB13510)],
   );
-
   static const LinearGradient warmGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [coral, amber, peach],
+    colors: [ink, persimmon],
   );
-
   static const LinearGradient successGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [mint, Color(0xFF26A69A)],
+    colors: [olive, Color(0xFF3B4830)],
   );
-
   static const LinearGradient dangerGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFFEF5350), Color(0xFFFF7043)],
+    colors: [rust, persimmon],
   );
-
   static const LinearGradient surfaceGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [bgPrimary, bgSecondary],
+    colors: [paperLight, paper],
   );
 
-  // ── Shadows ────────────────────────────────────────────────────
-  static List<BoxShadow> glow(Color color, [double intensity = 0.25]) => [
+  // ── Hard offset (press) shadow ─────────────────────────────────
+  static List<BoxShadow> hardShadow({
+    Color color = ink,
+    double offset = 4,
+    double alpha = 1,
+  }) => [
     BoxShadow(
-      color: color.withValues(alpha: intensity),
-      blurRadius: 20,
-      offset: const Offset(0, 6),
+      color: color.withValues(alpha: alpha),
+      offset: Offset(offset, offset),
+      blurRadius: 0,
     ),
   ];
 
-  static List<BoxShadow> get softShadow => [
+  static List<BoxShadow> softShadowList() => [
     BoxShadow(
-      color: Colors.black.withValues(alpha: 0.3),
-      blurRadius: 16,
+      color: ink.withValues(alpha: 0.05),
       offset: const Offset(0, 6),
+      blurRadius: 14,
     ),
   ];
 
-  // ── Radius ─────────────────────────────────────────────────────
-  static const double radiusSm = 8;
-  static const double radiusMd = 14;
-  static const double radiusLg = 20;
-  static const double radiusXl = 28;
+  // Back-compat helpers used by older code paths.
+  static List<BoxShadow> glow(Color color, [double intensity = 0.18]) => [
+    BoxShadow(
+      color: ink.withValues(alpha: intensity * 0.4),
+      offset: const Offset(3, 3),
+      blurRadius: 0,
+    ),
+  ];
+
+  static List<BoxShadow> get softShadow => softShadowList();
+
+  // ── Radii ──────────────────────────────────────────────────────
+  static const double radiusSm = 6;
+  static const double radiusMd = 10;
+  static const double radiusLg = 14;
+  static const double radiusXl = 20;
   static const double radiusRound = 100;
 
-  // ── Theme Data ─────────────────────────────────────────────────
-  static ThemeData get darkTheme {
+  // ── Typography helpers ─────────────────────────────────────────
+  /// Display serif — Fraunces italic-leaning, used for hero titles.
+  static TextStyle display({
+    double size = 32,
+    FontWeight weight = FontWeight.w600,
+    Color? color,
+    FontStyle style = FontStyle.normal,
+    double letterSpacing = -0.8,
+    double? height,
+  }) => GoogleFonts.fraunces(
+    fontSize: size,
+    fontWeight: weight,
+    color: color ?? textPrimary,
+    fontStyle: style,
+    letterSpacing: letterSpacing,
+    height: height ?? 1.05,
+  );
+
+  /// Body — newsprint Newsreader.
+  static TextStyle body({
+    double size = 14,
+    FontWeight weight = FontWeight.w400,
+    Color? color,
+    double height = 1.55,
+    FontStyle style = FontStyle.normal,
+  }) => GoogleFonts.newsreader(
+    fontSize: size,
+    fontWeight: weight,
+    color: color ?? textSecondary,
+    height: height,
+    fontStyle: style,
+  );
+
+  /// Mono — for numerals, IDs, ruled labels.
+  static TextStyle mono({
+    double size = 11,
+    FontWeight weight = FontWeight.w500,
+    Color? color,
+    double letterSpacing = 1.6,
+  }) => GoogleFonts.dmMono(
+    fontSize: size,
+    fontWeight: weight,
+    color: color ?? textSecondary,
+    letterSpacing: letterSpacing,
+  );
+
+  /// Small caps label (mono, uppercase). Caller should uppercase text.
+  static TextStyle label({
+    double size = 10,
+    Color? color,
+    FontWeight weight = FontWeight.w500,
+  }) => mono(
+    size: size,
+    weight: weight,
+    color: color ?? textTertiary,
+    letterSpacing: 2.4,
+  );
+
+  // ── Theme data ─────────────────────────────────────────────────
+  static ThemeData get lightTheme {
+    final scheme = ColorScheme.light(
+      primary: ink,
+      secondary: persimmon,
+      tertiary: olive,
+      surface: paperLight,
+      error: rust,
+      onPrimary: paperLight,
+      onSecondary: paperLight,
+      onSurface: ink,
+      outline: hairline,
+    );
+
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: bgPrimary,
-      colorScheme: const ColorScheme.dark(
-        primary: primary,
-        secondary: accent,
-        tertiary: plum,
-        surface: bgSecondary,
-        error: error,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
-        onSurface: textPrimary,
-        outline: borderDefault,
-      ),
-      textTheme: _buildTextTheme(),
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: paper,
+      colorScheme: scheme,
+      textTheme: _textTheme(),
       appBarTheme: AppBarTheme(
-        backgroundColor: bgPrimary,
+        backgroundColor: paperLight,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.playfairDisplay(
-          fontSize: 22,
-          fontWeight: FontWeight.w700,
-          color: textPrimary,
-        ),
-        iconTheme: const IconThemeData(color: textPrimary),
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: primary,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(radiusMd),
-          ),
-          elevation: 0,
-          textStyle: GoogleFonts.dmSans(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: textPrimary,
-          side: const BorderSide(color: borderDefault),
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(radiusMd),
-          ),
-          textStyle: GoogleFonts.dmSans(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: bgTertiary,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(radiusMd),
-          borderSide: const BorderSide(color: borderDefault),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(radiusMd),
-          borderSide: const BorderSide(color: borderDefault),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(radiusMd),
-          borderSide: const BorderSide(color: primary, width: 1.5),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(radiusMd),
-          borderSide: const BorderSide(color: error),
-        ),
-        labelStyle: GoogleFonts.dmSans(color: textSecondary, fontSize: 14),
-        hintStyle: GoogleFonts.dmSans(color: textTertiary, fontSize: 14),
-        prefixIconColor: textTertiary,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: display(size: 22, weight: FontWeight.w700),
+        iconTheme: const IconThemeData(color: ink),
       ),
       cardTheme: CardThemeData(
-        color: bgSecondary,
+        color: paperLight,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radiusLg),
-          side: const BorderSide(color: borderDefault),
+          borderRadius: BorderRadius.circular(radiusMd),
+          side: const BorderSide(color: hairline),
         ),
         margin: EdgeInsets.zero,
       ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: false,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 0,
+          vertical: 14,
+        ),
+        border: const UnderlineInputBorder(
+          borderSide: BorderSide(color: hairline),
+        ),
+        enabledBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: hairline),
+        ),
+        focusedBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: ink, width: 1.5),
+        ),
+        errorBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: rust),
+        ),
+        labelStyle: label(),
+        floatingLabelStyle: label(color: persimmon),
+        hintStyle: body(color: textTertiary),
+        prefixIconColor: textTertiary,
+      ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: bgElevated,
-        contentTextStyle: GoogleFonts.dmSans(color: textPrimary, fontSize: 14),
+        backgroundColor: ink,
+        contentTextStyle: mono(color: paperLight, size: 12),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radiusMd),
+          borderRadius: BorderRadius.circular(radiusSm),
         ),
         behavior: SnackBarBehavior.floating,
         elevation: 0,
       ),
       dividerTheme: const DividerThemeData(
-        color: borderDefault,
+        color: hairline,
         thickness: 1,
         space: 1,
       ),
       popupMenuTheme: PopupMenuThemeData(
-        color: bgElevated,
+        color: paperLight,
+        surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radiusMd),
-          side: const BorderSide(color: borderDefault),
+          borderRadius: BorderRadius.circular(radiusSm),
+          side: const BorderSide(color: ink),
         ),
-        elevation: 8,
+        elevation: 0,
+      ),
+      tabBarTheme: TabBarThemeData(
+        dividerColor: hairline,
+        labelColor: ink,
+        unselectedLabelColor: textTertiary,
+        indicatorColor: persimmon,
+        indicator: const UnderlineTabIndicator(
+          borderSide: BorderSide(color: persimmon, width: 2.5),
+        ),
+        labelStyle: mono(size: 11, color: ink, weight: FontWeight.w600),
+        unselectedLabelStyle: mono(size: 11, color: textTertiary),
+      ),
+      sliderTheme: const SliderThemeData(
+        activeTrackColor: ink,
+        inactiveTrackColor: hairlineSoft,
+        thumbColor: persimmon,
+        overlayColor: Color(0x33D14517),
+        trackHeight: 2,
       ),
     );
   }
 
-  static TextTheme _buildTextTheme() {
-    final base = ThemeData.dark().textTheme;
-    return GoogleFonts.dmSansTextTheme(base).copyWith(
-      displayLarge: GoogleFonts.playfairDisplay(
-        fontSize: 42,
-        fontWeight: FontWeight.w700,
-        color: textPrimary,
-        letterSpacing: -1.5,
-      ),
-      headlineMedium: GoogleFonts.playfairDisplay(
-        fontSize: 28,
-        fontWeight: FontWeight.w700,
-        color: textPrimary,
-        letterSpacing: -0.5,
-      ),
-      titleLarge: GoogleFonts.playfairDisplay(
-        fontSize: 22,
-        fontWeight: FontWeight.w600,
-        color: textPrimary,
-      ),
-      titleMedium: GoogleFonts.dmSans(
+  static ThemeData get darkTheme => lightTheme;
+
+  static TextTheme _textTheme() {
+    final base = ThemeData.light().textTheme;
+    return GoogleFonts.newsreaderTextTheme(base).copyWith(
+      displayLarge: display(size: 44, weight: FontWeight.w700),
+      headlineMedium: display(size: 28, weight: FontWeight.w700),
+      titleLarge: display(size: 22, weight: FontWeight.w600),
+      titleMedium: GoogleFonts.newsreader(
         fontSize: 16,
         fontWeight: FontWeight.w600,
         color: textPrimary,
       ),
-      bodyLarge: GoogleFonts.dmSans(
-        fontSize: 16,
-        fontWeight: FontWeight.w400,
-        color: textSecondary,
-      ),
-      bodyMedium: GoogleFonts.dmSans(
-        fontSize: 14,
-        fontWeight: FontWeight.w400,
-        color: textSecondary,
-      ),
-      bodySmall: GoogleFonts.dmSans(
-        fontSize: 12,
-        fontWeight: FontWeight.w400,
-        color: textTertiary,
-      ),
-      labelLarge: GoogleFonts.dmSans(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: textPrimary,
-      ),
+      bodyLarge: body(size: 16),
+      bodyMedium: body(size: 14),
+      bodySmall: body(size: 12, color: textTertiary),
+      labelLarge: mono(size: 12, color: textPrimary, weight: FontWeight.w600),
     );
   }
 }

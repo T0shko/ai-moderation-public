@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -25,7 +24,6 @@ class _AdminDashboardState extends State<AdminDashboard>
   double _threshold = 0.6;
   String _activeModel = 'ensemble';
 
-  // Test tab state
   final _testCommentController = TextEditingController();
   bool _isPostingTest = false;
   Map<String, dynamic>? _lastTestResult;
@@ -38,17 +36,19 @@ class _AdminDashboardState extends State<AdminDashboard>
   Uint8List? _selectedImageBytes;
   String? _selectedImageContentType;
 
-  // Chat tab state
   final _chatController = TextEditingController();
   final _chatScrollController = ScrollController();
   final List<Map<String, String>> _chatMessages = [];
   bool _isChatSending = false;
   String _chatProvider = 'combined';
 
+  static const _sections = ['Overview', 'Sandbox', 'Concierge', 'Staff', 'Press'];
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: _sections.length, vsync: this);
+    _tabController.addListener(() => setState(() {}));
     _loadData();
   }
 
@@ -91,7 +91,7 @@ class _AdminDashboardState extends State<AdminDashboard>
         });
       }
     } on AuthException {
-      return; // Already redirected to login
+      return;
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -103,12 +103,12 @@ class _AdminDashboardState extends State<AdminDashboard>
     try {
       final api = Provider.of<ApiService>(context, listen: false);
       await api.moderateComment(id, approved);
-      _showSnackBar(approved ? 'Comment approved' : 'Comment rejected');
+      _snack(approved ? 'Set in print' : 'Spiked');
       _loadData();
     } on AuthException {
       return;
-    } catch (e) {
-      _showSnackBar('Failed to moderate comment', isError: true);
+    } catch (_) {
+      _snack('Failed to moderate comment', isError: true);
     }
   }
 
@@ -116,12 +116,12 @@ class _AdminDashboardState extends State<AdminDashboard>
     try {
       final api = Provider.of<ApiService>(context, listen: false);
       await api.updateUserRole(userId, role);
-      _showSnackBar('Role updated');
+      _snack('Role updated');
       _loadData();
     } on AuthException {
       return;
-    } catch (e) {
-      _showSnackBar('Failed to update role', isError: true);
+    } catch (_) {
+      _snack('Failed to update role', isError: true);
     }
   }
 
@@ -129,29 +129,28 @@ class _AdminDashboardState extends State<AdminDashboard>
     try {
       final api = Provider.of<ApiService>(context, listen: false);
       await api.updateAiSettings(_threshold, _activeModel);
-      _showSnackBar('Settings saved');
+      _snack('Settings saved');
     } on AuthException {
       return;
-    } catch (e) {
-      _showSnackBar('Failed to save settings', isError: true);
+    } catch (_) {
+      _snack('Failed to save settings', isError: true);
     }
   }
 
   void _postTestComment() async {
     final text = _testCommentController.text.trim();
     if (text.isEmpty) return;
-
     setState(() => _isPostingTest = true);
     try {
       final api = Provider.of<ApiService>(context, listen: false);
       await api.postComment(text);
       _testCommentController.clear();
-      _showSnackBar('Comment posted — check Overview for result');
-      _loadData(); // Refresh to see the new comment
+      _snack('Filed for review');
+      _loadData();
     } on AuthException {
       return;
-    } catch (e) {
-      _showSnackBar('Failed to post comment', isError: true);
+    } catch (_) {
+      _snack('Failed to post', isError: true);
     } finally {
       if (mounted) setState(() => _isPostingTest = false);
     }
@@ -160,14 +159,13 @@ class _AdminDashboardState extends State<AdminDashboard>
   void _testAnalyze() async {
     final text = _testCommentController.text.trim();
     if (text.isEmpty) return;
-
     setState(() => _isPostingTest = true);
     try {
       final api = Provider.of<ApiService>(context, listen: false);
       final result = await api.testSentiment(text);
       if (mounted) setState(() => _lastTestResult = result);
-    } catch (e) {
-      _showSnackBar('Analysis failed', isError: true);
+    } catch (_) {
+      _snack('Analysis failed', isError: true);
     } finally {
       if (mounted) setState(() => _isPostingTest = false);
     }
@@ -182,14 +180,12 @@ class _AdminDashboardState extends State<AdminDashboard>
         allowedExtensions: const ['jpg', 'jpeg', 'png', 'gif', 'webp'],
       );
       if (result == null || result.files.isEmpty) return;
-
       final pickedFile = result.files.single;
       final bytes = pickedFile.bytes;
       if (bytes == null || bytes.isEmpty) {
-        _showSnackBar('Could not read the selected image', isError: true);
+        _snack('Could not read the selected image', isError: true);
         return;
       }
-
       if (mounted) {
         setState(() {
           _selectedImageName = pickedFile.name;
@@ -200,21 +196,20 @@ class _AdminDashboardState extends State<AdminDashboard>
               : null;
           _lastImageResult = null;
         });
-        _showSnackBar('Image staged in Vision Lab');
+        _snack('Image staged');
       }
     } on AuthException {
       return;
     } catch (e) {
-      _showSnackBar('Could not pick image: $e', isError: true);
+      _snack('Could not pick image: $e', isError: true);
     }
   }
 
   void _analyzeVisionImage() async {
     if (_selectedImageBytes == null || _selectedImageName == null) {
-      _showSnackBar('Choose an image first', isError: true);
+      _snack('Choose an image first', isError: true);
       return;
     }
-
     setState(() => _isTestingImage = true);
     try {
       final api = Provider.of<ApiService>(context, listen: false);
@@ -223,7 +218,6 @@ class _AdminDashboardState extends State<AdminDashboard>
         _selectedImageName!,
         _selectedImageContentType,
       );
-
       Map<String, dynamic>? visionLabInfo = _visionLabInfo;
       String? visionLabError;
       try {
@@ -231,17 +225,16 @@ class _AdminDashboardState extends State<AdminDashboard>
       } catch (e) {
         visionLabError = e.toString().replaceFirst('Exception: ', '');
       }
-
       if (mounted) {
         setState(() {
           _lastImageResult = imageResult;
           _visionLabInfo = visionLabInfo;
           _visionLabError = visionLabError;
         });
-        _showSnackBar('Vision Lab analysis completed');
+        _snack('Verdict in');
       }
     } catch (e) {
-      _showSnackBar('Vision Lab failed: $e', isError: true);
+      _snack('Vision Lab failed: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isTestingImage = false);
     }
@@ -256,7 +249,7 @@ class _AdminDashboardState extends State<AdminDashboard>
           _visionLabInfo = info;
           _visionLabError = null;
         });
-        _showSnackBar('Vision Lab refreshed');
+        _snack('Refreshed');
       }
     } catch (e) {
       if (mounted) {
@@ -264,7 +257,7 @@ class _AdminDashboardState extends State<AdminDashboard>
           _visionLabError = e.toString().replaceFirst('Exception: ', '');
         });
       }
-      _showSnackBar('Could not refresh Vision Lab', isError: true);
+      _snack('Could not refresh', isError: true);
     }
   }
 
@@ -286,37 +279,32 @@ class _AdminDashboardState extends State<AdminDashboard>
   void _sendChatMessage() async {
     final text = _chatController.text.trim();
     if (text.isEmpty || _isChatSending) return;
-
     setState(() {
       _chatMessages.add({'role': 'user', 'content': text});
       _isChatSending = true;
     });
     _chatController.clear();
     _scrollChat();
-
     try {
       final api = Provider.of<ApiService>(context, listen: false);
-      final response = await api.sendChatMessage(text, provider: _chatProvider);
+      final response =
+          await api.sendChatMessage(text, provider: _chatProvider);
       if (mounted) {
-        setState(
-          () => _chatMessages.add({
-            'role': 'assistant',
-            'content': response['response'] ?? 'No response',
-          }),
-        );
+        setState(() => _chatMessages.add({
+              'role': 'assistant',
+              'content': response['response'] ?? 'No response',
+            }));
         _scrollChat();
       }
     } on AuthException {
       return;
     } catch (e) {
       if (mounted) {
-        setState(
-          () => _chatMessages.add({
-            'role': 'error',
-            'content':
-                'Failed: ${e.toString().replaceFirst('Exception: ', '')}',
-          }),
-        );
+        setState(() => _chatMessages.add({
+              'role': 'error',
+              'content':
+                  'Failed: ${e.toString().replaceFirst('Exception: ', '')}',
+            }));
       }
     } finally {
       if (mounted) setState(() => _isChatSending = false);
@@ -335,15 +323,18 @@ class _AdminDashboardState extends State<AdminDashboard>
     });
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
+  void _snack(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: GoogleFonts.dmSans(fontSize: 14)),
-        backgroundColor: isError ? AppTheme.error : AppTheme.success,
+        content: Text(
+          message,
+          style: AppTheme.mono(size: 11, color: AppTheme.paperLight),
+        ),
+        backgroundColor: isError ? AppTheme.rust : AppTheme.ink,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
         ),
       ),
     );
@@ -357,32 +348,31 @@ class _AdminDashboardState extends State<AdminDashboard>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bgDeep,
+      backgroundColor: AppTheme.paper,
       body: NexusBackground(
         child: SafeArea(
           child: Column(
             children: [
-              _buildHeader(),
-              _buildTabBar(),
+              _masthead(),
+              _sectionRule(),
               Expanded(
                 child: _isLoading
                     ? const Center(
                         child: CircularProgressIndicator(
-                          color: AppTheme.primary,
-                        ),
+                            color: AppTheme.ink, strokeWidth: 1.8),
                       )
                     : _error != null
-                    ? _buildErrorState()
-                    : TabBarView(
-                        controller: _tabController,
-                        children: [
-                          _buildOverviewTab(),
-                          _buildTestTab(),
-                          _buildChatTab(),
-                          _buildUsersTab(),
-                          _buildSettingsTab(),
-                        ],
-                      ),
+                        ? _errorState()
+                        : TabBarView(
+                            controller: _tabController,
+                            children: [
+                              _overviewTab(),
+                              _sandboxTab(),
+                              _conciergeTab(),
+                              _staffTab(),
+                              _pressTab(),
+                            ],
+                          ),
               ),
             ],
           ),
@@ -391,145 +381,172 @@ class _AdminDashboardState extends State<AdminDashboard>
     );
   }
 
-  Widget _buildHeader() {
+  Widget _masthead() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: AppTheme.bgSecondary.withValues(alpha: 0.7),
-        border: const Border(bottom: BorderSide(color: AppTheme.borderDefault)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              gradient: AppTheme.primaryGradient,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: AppTheme.glow(AppTheme.coral, 0.2),
-            ),
-            child: const Icon(
-              Icons.admin_panel_settings_outlined,
-              color: Colors.white,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Admin',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                Text(
-                  'System management',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 12,
-                    color: AppTheme.textTertiary,
-                  ),
-                ),
-                if (_visionLabInfo != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Vision Lab live',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.peach,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          AppIconButton(icon: Icons.refresh_rounded, onPressed: _loadData),
-          const SizedBox(width: 8),
-          AppIconButton(
-            icon: Icons.logout_rounded,
-            onPressed: _logout,
-            color: AppTheme.error,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabBar() {
-    return Container(
-      color: AppTheme.bgSecondary.withValues(alpha: 0.5),
-      child: TabBar(
-        controller: _tabController,
-        isScrollable: true,
-        indicatorColor: AppTheme.primary,
-        indicatorWeight: 2,
-        labelColor: AppTheme.primary,
-        unselectedLabelColor: AppTheme.textTertiary,
-        labelStyle: GoogleFonts.dmSans(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
+      decoration: const BoxDecoration(
+        color: AppTheme.paperLight,
+        border: Border(
+          bottom: BorderSide(color: AppTheme.ink, width: 2),
         ),
-        tabAlignment: TabAlignment.start,
-        tabs: const [
-          Tab(text: 'Overview'),
-          Tab(text: 'Test'),
-          Tab(text: 'Chat'),
-          Tab(text: 'Users'),
-          Tab(text: 'Settings'),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('EDITORIAL OFFICE \u2014 ADMIN',
+                  style: AppTheme.label(color: AppTheme.textTertiary)),
+              const Spacer(),
+              if (_visionLabInfo != null)
+                StatusBadge(
+                  text: 'VISION LIVE',
+                  color: AppTheme.persimmon,
+                  showPulse: true,
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: RichText(
+                  text: TextSpan(
+                    style: AppTheme.display(
+                      size: 32,
+                      weight: FontWeight.w700,
+                      letterSpacing: -1.2,
+                    ),
+                    children: [
+                      const TextSpan(text: 'The '),
+                      TextSpan(
+                        text: 'Editor\u2019s',
+                        style: AppTheme.display(
+                          size: 32,
+                          weight: FontWeight.w400,
+                          style: FontStyle.italic,
+                          letterSpacing: -1.2,
+                          color: AppTheme.persimmon,
+                        ),
+                      ),
+                      const TextSpan(text: ' Desk'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              AppIconButton(icon: Icons.refresh, onPressed: _loadData),
+              const SizedBox(width: 8),
+              AppIconButton(
+                icon: Icons.logout,
+                onPressed: _logout,
+                color: AppTheme.rust,
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildErrorState() {
+  Widget _sectionRule() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppTheme.paperLight,
+        border: Border(
+          bottom: BorderSide(color: AppTheme.hairline, width: 1),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: List.generate(_sections.length, (i) {
+            final active = _tabController.index == i;
+            return GestureDetector(
+              onTap: () => _tabController.animateTo(i),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    Text(
+                      '0${i + 1}',
+                      style: AppTheme.mono(
+                        size: 10,
+                        color: active
+                            ? AppTheme.persimmon
+                            : AppTheme.textTertiary,
+                        weight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        border: active
+                            ? const Border(
+                                bottom: BorderSide(
+                                  color: AppTheme.persimmon,
+                                  width: 2,
+                                ),
+                              )
+                            : null,
+                      ),
+                      child: Text(
+                        _sections[i].toUpperCase(),
+                        style: AppTheme.mono(
+                          size: 11,
+                          color: active ? AppTheme.ink : AppTheme.textSecondary,
+                          weight: active ? FontWeight.w700 : FontWeight.w500,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _errorState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.cloud_off_rounded,
-            size: 48,
-            color: AppTheme.textTertiary.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Connection issue',
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
+          const CrosshairMark(size: 24, color: AppTheme.rust),
+          const SizedBox(height: 12),
+          Text('CONNECTION ISSUE',
+              style: AppTheme.label(color: AppTheme.rust)),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: 180,
+            child: ActionButton(
+              text: 'Retry',
+              icon: Icons.refresh,
+              onPressed: _loadData,
+              height: 44,
             ),
-          ),
-          const SizedBox(height: 20),
-          ActionButton(
-            text: 'Retry',
-            icon: Icons.refresh,
-            onPressed: _loadData,
-            width: 140,
-            height: 44,
           ),
         ],
       ),
     );
   }
 
-  // ── Overview Tab ──────────────────────────────────────────────
-  Widget _buildOverviewTab() {
-    final approved = _allComments
-        .where((c) => c['status'] == 'APPROVED')
-        .length;
-    final rejected = _allComments
-        .where((c) => c['status'] == 'REJECTED')
-        .length;
-    final pending = _allComments.where((c) => c['status'] == 'PENDING').length;
+  // ── Overview ─────────────────────────────────────────────────────
+  Widget _overviewTab() {
+    final approved =
+        _allComments.where((c) => c['status'] == 'APPROVED').length;
+    final rejected =
+        _allComments.where((c) => c['status'] == 'REJECTED').length;
+    final pending =
+        _allComments.where((c) => c['status'] == 'PENDING').length;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -537,646 +554,471 @@ class _AdminDashboardState extends State<AdminDashboard>
             children: [
               StatTile(
                 value: '${_allComments.length}',
-                label: 'Total Posts',
+                label: 'Total',
                 icon: Icons.article_outlined,
-                color: AppTheme.info,
+                color: AppTheme.azure,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               StatTile(
                 value: '$approved',
-                label: 'Approved',
-                icon: Icons.check_circle_outline,
-                color: AppTheme.success,
+                label: 'In print',
+                icon: Icons.check,
+                color: AppTheme.olive,
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(
             children: [
               StatTile(
                 value: '$rejected',
-                label: 'Rejected',
-                icon: Icons.cancel_outlined,
-                color: AppTheme.error,
+                label: 'Spiked',
+                icon: Icons.close,
+                color: AppTheme.rust,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               StatTile(
                 value: '$pending',
-                label: 'Pending',
+                label: 'In queue',
                 icon: Icons.schedule_outlined,
-                color: AppTheme.warning,
+                color: AppTheme.honey,
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(
             children: [
               StatTile(
                 value: '${_users.length}',
-                label: 'Users',
+                label: 'Staff',
                 icon: Icons.people_outline,
-                color: AppTheme.plum,
+                color: AppTheme.ink,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               const Expanded(child: SizedBox()),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           SectionHeader(
-            title: 'Recent Activity',
-            subtitle:
-                'Last ${_allComments.length > 5 ? 5 : _allComments.length} posts',
+            title: 'Latest Bulletins',
+            subtitle: 'Most recent dispatches across the wire.',
+            index: '\u00A7',
           ),
-          ..._allComments.take(5).map((c) => _buildMiniComment(c)),
+          ..._allComments.take(6).toList().asMap().entries.map(
+                (e) => _miniEntry(e.value, e.key + 1),
+              ),
         ],
       ),
     );
   }
 
-  Widget _buildMiniComment(dynamic comment) {
+  Widget _miniEntry(dynamic comment, int index) {
     final status = comment['status'] ?? 'PENDING';
     final sentiment = comment['sentiment'] ?? 'NEUTRAL';
     final confidence = (comment['confidenceScore'] ?? 0.0) * 100;
     final statusColor = status == 'APPROVED'
-        ? AppTheme.success
+        ? AppTheme.olive
         : status == 'REJECTED'
-        ? AppTheme.error
-        : AppTheme.warning;
+            ? AppTheme.rust
+            : AppTheme.honey;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: SurfaceCard(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         accentColor: statusColor,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Expanded(
-                  child: Text(
-                    comment['author']?['username'] ?? 'Unknown',
-                    style: GoogleFonts.dmSans(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                ),
+                FolioTag(number: index.toString().padLeft(3, '0')),
+                const Spacer(),
+                Text(sentiment,
+                    style: AppTheme.label(
+                        color: AppTheme.textTertiary, size: 10)),
+                const SizedBox(width: 8),
+                Text('${confidence.toStringAsFixed(0)}%',
+                    style: AppTheme.mono(
+                        size: 10, color: AppTheme.textTertiary)),
+                const SizedBox(width: 10),
                 StatusBadge(text: status, color: statusColor),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
+            Text(
+              comment['author']?['username'] ?? 'Unknown',
+              style: AppTheme.body(
+                size: 13,
+                color: AppTheme.ink,
+                weight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
             Text(
               comment['content'] ?? '',
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                color: AppTheme.textSecondary,
-              ),
+              style: AppTheme.body(size: 14, color: AppTheme.textSecondary),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Text(
-                  '$sentiment',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 11,
-                    color: AppTheme.textTertiary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${confidence.toStringAsFixed(0)}% confidence',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 11,
-                    color: AppTheme.textTertiary,
-                  ),
-                ),
-                const Spacer(),
-                if (status == 'PENDING') ...[
-                  GestureDetector(
-                    onTap: () => _moderateComment(comment['id'], true),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: AppTheme.success.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.check,
-                        size: 16,
-                        color: AppTheme.success,
-                      ),
+            if (status == 'PENDING') ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: ActionButton(
+                      text: 'Spike',
+                      onPressed: () => _moderateComment(comment['id'], false),
+                      secondary: true,
+                      backgroundColor: AppTheme.paperLight,
+                      height: 38,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _moderateComment(comment['id'], false),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: AppTheme.error.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close,
-                        size: 16,
-                        color: AppTheme.error,
-                      ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ActionButton(
+                      text: 'Set',
+                      onPressed: () => _moderateComment(comment['id'], true),
+                      backgroundColor: AppTheme.olive,
+                      height: 38,
                     ),
                   ),
                 ],
-              ],
-            ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  // ── Test Tab (Post comments + Vision Lab) ─────────────────────
-  Widget _buildTestTab() {
-    final totalAnalyses = _visionLabInfo?['totalAnalyses']?.toString() ?? '0';
-    final maxSizeLabel = _visionLabInfo?['maxSizeLabel']?.toString() ?? '10 MB';
-    final acceptedTypes =
-        (_visionLabInfo?['acceptedTypes'] as List?)
-            ?.map(
-              (type) =>
-                  type.toString().replaceFirst('image/', '').toUpperCase(),
-            )
-            .join('  •  ') ??
-        'JPEG  •  PNG  •  GIF  •  WEBP';
-
+  // ── Sandbox (text + vision) ────────────────────────────────────
+  Widget _sandboxTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SurfaceCard(
-            padding: EdgeInsets.zero,
-            backgroundColor: AppTheme.bgSecondary.withValues(alpha: 0.95),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppTheme.coral.withValues(alpha: 0.12),
-                    AppTheme.amber.withValues(alpha: 0.08),
-                    AppTheme.bgSecondary,
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              ),
-              padding: const EdgeInsets.all(22),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 760;
-                  final intro = _buildVisionLabIntro(
-                    totalAnalyses,
-                    maxSizeLabel,
-                    acceptedTypes,
-                  );
-                  final deck = _buildVisionLabDeck(compact);
-
-                  if (compact) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [intro, const SizedBox(height: 18), deck],
-                    );
-                  }
-
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(flex: 11, child: intro),
-                      const SizedBox(width: 18),
-                      Expanded(flex: 10, child: deck),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          SurfaceCard(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SectionHeader(
-                  title: 'Text Sandbox',
-                  subtitle:
-                      'Keep testing text moderation separately from the new vision pipeline',
-                ),
-                AppTextField(
-                  controller: _testCommentController,
-                  label: 'Enter text to test...',
-                  prefixIcon: Icons.edit_outlined,
-                  maxLines: 4,
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ActionButton(
-                        text: 'Post Comment',
-                        icon: Icons.send_rounded,
-                        isLoading: _isPostingTest,
-                        onPressed: _postTestComment,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ActionButton(
-                        text: 'Analyze Only',
-                        icon: Icons.psychology_outlined,
-                        isLoading: _isPostingTest,
-                        onPressed: _testAnalyze,
-                        gradient: AppTheme.accentGradient,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          _visionLabPanel(),
+          const SizedBox(height: 20),
+          _textSandboxPanel(),
           if (_lastTestResult != null) ...[
             const SizedBox(height: 16),
-            _buildTestResult(),
+            _textResult(),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildVisionLabIntro(
-    String totalAnalyses,
-    String maxSizeLabel,
-    String acceptedTypes,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: AppTheme.bgDeep.withValues(alpha: 0.38),
-            borderRadius: BorderRadius.circular(AppTheme.radiusRound),
-            border: Border.all(color: AppTheme.amber.withValues(alpha: 0.22)),
-          ),
-          child: Text(
-            'VISION LAB / WEB SAFE',
-            style: GoogleFonts.dmSans(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.4,
-              color: AppTheme.peach,
-            ),
-          ),
-        ),
-        const SizedBox(height: 18),
-        Text(
-          'Drop in an image. The UI is brand new, the endpoints are new, and the local AI algorithm stays intact.',
-          style: GoogleFonts.playfairDisplay(
-            fontSize: 32,
-            height: 1.05,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 14),
-        Text(
-          'Vision Lab uses JSON transport for browser uploads so web clients stop fighting multipart edge cases. GET returns lab metadata, POST runs analysis and stores the result.',
-          style: GoogleFonts.dmSans(
-            fontSize: 14,
-            height: 1.6,
-            color: AppTheme.textSecondary,
-          ),
-        ),
-        const SizedBox(height: 18),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _buildVisionMetaChip(
-              Icons.layers_outlined,
-              '$totalAnalyses analyses',
-            ),
-            _buildVisionMetaChip(Icons.cloud_done_outlined, 'GET + POST'),
-            _buildVisionMetaChip(Icons.data_object_outlined, 'JSON transport'),
-            _buildVisionMetaChip(Icons.sd_storage_outlined, maxSizeLabel),
-          ],
-        ),
-        const SizedBox(height: 18),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppTheme.bgDeep.withValues(alpha: 0.32),
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            border: Border.all(color: AppTheme.borderActive),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Accepted formats',
-                style: GoogleFonts.dmSans(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                acceptedTypes,
-                style: GoogleFonts.dmSans(
-                  fontSize: 13,
-                  letterSpacing: 0.2,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildVisionLabDeck(bool compact) {
-    return Column(
-      children: [
-        SurfaceCard(
-          padding: const EdgeInsets.all(18),
-          backgroundColor: AppTheme.bgDeep.withValues(alpha: 0.42),
-          accentGradient: AppTheme.warmGradient,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Upload Console',
-                      style: GoogleFonts.playfairDisplay(
-                        fontSize: compact ? 22 : 24,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                  ),
-                  AppIconButton(
-                    icon: Icons.sync_rounded,
-                    onPressed: _refreshVisionLabInfo,
-                    tooltip: 'Refresh Vision Lab info',
-                    color: AppTheme.amber,
-                    backgroundColor: AppTheme.bgSecondary,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              _buildVisionDropZone(),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: ActionButton(
-                      text: 'Choose Image',
-                      icon: Icons.add_photo_alternate_outlined,
-                      onPressed: _pickVisionImage,
-                      gradient: AppTheme.primaryGradient,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ActionButton(
-                      text: 'Run Analysis',
-                      icon: Icons.bolt_rounded,
-                      isLoading: _isTestingImage,
-                      onPressed: _selectedImageBytes == null
-                          ? null
-                          : _analyzeVisionImage,
-                      gradient: AppTheme.accentGradient,
-                    ),
-                  ),
-                ],
-              ),
-              if (_visionLabError != null) ...[
-                const SizedBox(height: 14),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppTheme.error.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                    border: Border.all(
-                      color: AppTheme.error.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Text(
-                    _visionLabError!,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      color: AppTheme.error,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        if (_lastImageResult != null) ...[
-          const SizedBox(height: 16),
-          _buildImageResult(),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildVisionDropZone() {
+  Widget _visionLabPanel() {
+    final totalAnalyses =
+        _visionLabInfo?['totalAnalyses']?.toString() ?? '0';
+    final maxSizeLabel =
+        _visionLabInfo?['maxSizeLabel']?.toString() ?? '10 MB';
+    final acceptedTypes =
+        (_visionLabInfo?['acceptedTypes'] as List?)
+                ?.map((t) =>
+                    t.toString().replaceFirst('image/', '').toUpperCase())
+                .join('  \u00B7  ') ??
+            'JPEG  \u00B7  PNG  \u00B7  GIF  \u00B7  WEBP';
     final staged = _selectedImageName != null;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        border: Border.all(
-          color: staged
-              ? AppTheme.amber.withValues(alpha: 0.35)
-              : AppTheme.borderActive,
-        ),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppTheme.bgPrimary.withValues(alpha: 0.92),
-            AppTheme.bgTertiary.withValues(alpha: 0.86),
-          ],
-        ),
-      ),
+    return SurfaceCard(
+      padding: const EdgeInsets.all(22),
+      accentColor: AppTheme.persimmon,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  gradient: staged
-                      ? AppTheme.accentGradient
-                      : AppTheme.primaryGradient,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: AppTheme.glow(
-                    staged ? AppTheme.amber : AppTheme.coral,
-                    0.18,
+              Text('§ VISION LAB',
+                  style: AppTheme.label(color: AppTheme.persimmon, size: 11)),
+              const Spacer(),
+              AppIconButton(
+                icon: Icons.sync_rounded,
+                onPressed: _refreshVisionLabInfo,
+                tooltip: 'Refresh',
+                size: 34,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          RichText(
+            text: TextSpan(
+              style: AppTheme.display(
+                size: 30,
+                weight: FontWeight.w700,
+                letterSpacing: -1,
+                height: 1.05,
+              ),
+              children: [
+                const TextSpan(text: 'Drop a photograph,\nrun the '),
+                TextSpan(
+                  text: 'verdict',
+                  style: AppTheme.display(
+                    size: 30,
+                    weight: FontWeight.w400,
+                    style: FontStyle.italic,
+                    letterSpacing: -1,
+                    color: AppTheme.persimmon,
+                    height: 1.05,
                   ),
                 ),
-                child: Icon(
-                  staged ? Icons.check_rounded : Icons.image_search_rounded,
-                  color: Colors.white,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      staged
-                          ? (_selectedImageName ?? 'Image ready')
-                          : 'No image staged',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      staged
-                          ? '${(_selectedImageSize! / 1024).toStringAsFixed(1)} KB  •  ${_selectedImageContentType ?? 'image/jpeg'}'
-                          : 'Choose a browser image file and send it straight to the new Vision Lab endpoint.',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        color: AppTheme.textTertiary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              StatusBadge(
-                text: staged ? 'READY' : 'IDLE',
-                color: staged ? AppTheme.amber : AppTheme.slate,
-              ),
+                const TextSpan(text: '.'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'JSON transport. GET reports lab metadata, POST runs the analysis.',
+            style: AppTheme.body(
+              size: 14,
+              color: AppTheme.textSecondary,
+              style: FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _ledgerCell('TOTAL', totalAnalyses),
+              const SizedBox(width: 10),
+              _ledgerCell('MAX SIZE', maxSizeLabel),
+              const SizedBox(width: 10),
+              _ledgerCell('METHODS', 'GET + POST'),
             ],
           ),
           const SizedBox(height: 16),
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
             decoration: BoxDecoration(
-              color: AppTheme.bgDeep.withValues(alpha: 0.28),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-              border: Border.all(color: AppTheme.borderDefault),
+              color: AppTheme.paper,
+              border: Border.all(
+                color: staged ? AppTheme.persimmon : AppTheme.hairline,
+                width: 1.2,
+              ),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildMiniStatusColumn('Transport', 'Base64 JSON'),
-                const SizedBox(width: 12),
-                _buildMiniStatusColumn('Endpoint', '/api/vision-lab'),
-                const SizedBox(width: 12),
-                _buildMiniStatusColumn('Methods', 'GET + POST'),
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: staged
+                            ? AppTheme.persimmonSoft
+                            : AppTheme.paperLight,
+                        border: Border.all(
+                          color: staged ? AppTheme.persimmon : AppTheme.ink,
+                          width: 1.2,
+                        ),
+                      ),
+                      child: Icon(
+                        staged ? Icons.check : Icons.image_outlined,
+                        size: 20,
+                        color: staged ? AppTheme.persimmon : AppTheme.ink,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            staged
+                                ? (_selectedImageName ?? 'Image staged')
+                                : 'No image staged',
+                            style: AppTheme.body(
+                              size: 14,
+                              color: AppTheme.ink,
+                              weight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            staged
+                                ? '${(_selectedImageSize! / 1024).toStringAsFixed(1)} KB \u00B7 ${_selectedImageContentType ?? 'image/jpeg'}'
+                                : 'Choose a file and run the press.',
+                            style: AppTheme.mono(
+                              size: 10,
+                              color: AppTheme.textTertiary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    StatusBadge(
+                      text: staged ? 'READY' : 'IDLE',
+                      color: staged ? AppTheme.persimmon : AppTheme.slate,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  acceptedTypes,
+                  style: AppTheme.mono(size: 10, color: AppTheme.textTertiary),
+                ),
               ],
             ),
           ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: ActionButton(
+                  text: 'Choose image',
+                  icon: Icons.add_photo_alternate_outlined,
+                  onPressed: _pickVisionImage,
+                  secondary: true,
+                  backgroundColor: AppTheme.paperLight,
+                  height: 44,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ActionButton(
+                  text: 'Run verdict',
+                  icon: Icons.bolt_outlined,
+                  isLoading: _isTestingImage,
+                  onPressed: _selectedImageBytes == null
+                      ? null
+                      : _analyzeVisionImage,
+                  backgroundColor: AppTheme.persimmon,
+                  height: 44,
+                ),
+              ),
+            ],
+          ),
+          if (_visionLabError != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.rustSoft,
+                border: Border.all(color: AppTheme.rust),
+              ),
+              child: Text(
+                _visionLabError!,
+                style: AppTheme.mono(size: 11, color: AppTheme.rust),
+              ),
+            ),
+          ],
+          if (_lastImageResult != null) ...[
+            const SizedBox(height: 18),
+            _imageResult(),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildMiniStatusColumn(String label, String value) {
-    return Expanded(
+  Widget _textSandboxPanel() {
+    return SurfaceCard(
+      padding: const EdgeInsets.all(22),
+      accentColor: AppTheme.ink,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.dmSans(
-              fontSize: 11,
-              color: AppTheme.textTertiary,
-            ),
+          SectionHeader(
+            title: 'Text Sandbox',
+            subtitle: 'Try moderation pipeline without publishing.',
+            index: '\u00A7',
           ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.dmSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textPrimary,
-            ),
+          AppTextField(
+            controller: _testCommentController,
+            label: 'Test text',
+            hint: 'Type to inspect…',
+            maxLines: 4,
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVisionMetaChip(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: AppTheme.bgDeep.withValues(alpha: 0.26),
-        borderRadius: BorderRadius.circular(AppTheme.radiusRound),
-        border: Border.all(color: AppTheme.borderDefault),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: AppTheme.peach),
-          const SizedBox(width: 8),
-          Text(
-            text,
-            style: GoogleFonts.dmSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
-            ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: ActionButton(
+                  text: 'Analyze',
+                  icon: Icons.psychology_outlined,
+                  isLoading: _isPostingTest,
+                  onPressed: _testAnalyze,
+                  secondary: true,
+                  backgroundColor: AppTheme.paperLight,
+                  height: 46,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ActionButton(
+                  text: 'File comment',
+                  icon: Icons.send_outlined,
+                  isLoading: _isPostingTest,
+                  onPressed: _postTestComment,
+                  height: 46,
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTestResult() {
+  Widget _ledgerCell(String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.paper,
+          border: Border.all(color: AppTheme.hairline),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: AppTheme.label(color: AppTheme.textTertiary)),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTheme.mono(
+                size: 13,
+                color: AppTheme.ink,
+                weight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _textResult() {
     final sentiment = _lastTestResult!['sentiment'] ?? 'UNKNOWN';
     final confidence = (_lastTestResult!['confidence'] ?? 0.0) * 100;
     final wouldApprove = _lastTestResult!['wouldBeAutoApproved'] ?? false;
     final sentColor = sentiment == 'NEGATIVE'
-        ? AppTheme.error
+        ? AppTheme.rust
         : sentiment == 'POSITIVE'
-        ? AppTheme.success
-        : AppTheme.info;
+            ? AppTheme.olive
+            : AppTheme.azure;
 
     return SurfaceCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(22),
       accentColor: sentColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(title: 'Analysis Result'),
+          SectionHeader(title: 'Verdict', index: '\u00B6'),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: _resultRow('Sentiment', sentiment, sentColor)),
+              Expanded(child: _kv('Sentiment', sentiment, sentColor)),
               Expanded(
-                child: _resultRow(
+                child: _kv(
                   'Confidence',
                   '${confidence.toStringAsFixed(1)}%',
-                  AppTheme.textPrimary,
+                  AppTheme.ink,
                 ),
               ),
             ],
@@ -1185,30 +1027,30 @@ class _AdminDashboardState extends State<AdminDashboard>
           Row(
             children: [
               Icon(
-                wouldApprove ? Icons.check_circle_rounded : Icons.block_rounded,
-                color: wouldApprove ? AppTheme.success : AppTheme.error,
-                size: 20,
+                wouldApprove ? Icons.check : Icons.block,
+                color: wouldApprove ? AppTheme.olive : AppTheme.rust,
+                size: 18,
               ),
               const SizedBox(width: 8),
               Text(
                 wouldApprove
-                    ? 'Would be auto-approved'
-                    : 'Would be flagged for review',
-                style: GoogleFonts.dmSans(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: wouldApprove ? AppTheme.success : AppTheme.error,
+                    ? 'Would be set in print automatically'
+                    : 'Would be held for review',
+                style: AppTheme.body(
+                  size: 13,
+                  color: wouldApprove ? AppTheme.olive : AppTheme.rust,
+                  weight: FontWeight.w600,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
-            '"${_lastTestResult!['content'] ?? ''}"',
-            style: GoogleFonts.dmSans(
-              fontSize: 13,
+            '\u201C${_lastTestResult!['content'] ?? ''}\u201D',
+            style: AppTheme.body(
+              size: 13,
               color: AppTheme.textTertiary,
-              fontStyle: FontStyle.italic,
+              style: FontStyle.italic,
             ),
           ),
         ],
@@ -1216,185 +1058,115 @@ class _AdminDashboardState extends State<AdminDashboard>
     );
   }
 
-  Widget _resultRow(String label, String value, Color color) {
+  Widget _imageResult() {
+    final status = _lastImageResult!['status'] ?? 'UNKNOWN';
+    final categories = ((_lastImageResult!['categories'] as List?) ?? const [])
+        .map((item) => item.toString())
+        .toList();
+    final reason = _lastImageResult!['reason'] ?? '';
+    final confidence =
+        ((_lastImageResult!['confidence'] ?? 0.0) as num) * 100;
+    final filename = _lastImageResult!['filename'] ??
+        _selectedImageName ??
+        'Uploaded image';
+    final engine = _lastImageResult!['engine'] ?? 'Spatial Grid Ensemble';
+    final analysisId = _lastImageResult!['analysisId']?.toString() ?? '--';
+    final statusColor = status == 'SAFE'
+        ? AppTheme.olive
+        : status == 'REJECTED'
+            ? AppTheme.rust
+            : AppTheme.honey;
+
+    return SurfaceCard(
+      padding: const EdgeInsets.all(20),
+      accentColor: statusColor,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('Vision Verdict',
+                    style: AppTheme.display(
+                      size: 24,
+                      weight: FontWeight.w700,
+                      letterSpacing: -0.8,
+                    )),
+              ),
+              StatusBadge(text: status, color: statusColor, stamp: true),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(filename,
+              style:
+                  AppTheme.mono(size: 11, color: AppTheme.textTertiary)),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _kv('Confidence',
+                    '${confidence.toStringAsFixed(1)}%', statusColor),
+              ),
+              Expanded(child: _kv('Analysis ID', analysisId, AppTheme.ink)),
+              Expanded(child: _kv('Engine', engine, AppTheme.persimmon)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text('REASONING',
+              style: AppTheme.label(color: AppTheme.textSecondary)),
+          const SizedBox(height: 6),
+          Text(
+            reason.isEmpty ? 'No significant violations detected.' : reason,
+            style: AppTheme.body(size: 14, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          Text('CATEGORIES',
+              style: AppTheme.label(color: AppTheme.textSecondary)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: categories.isEmpty
+                ? [StatusBadge(text: 'NONE', color: AppTheme.slate)]
+                : categories
+                    .map(
+                      (c) => StatusBadge(text: c, color: statusColor),
+                    )
+                    .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _kv(String label, String value, Color color) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: GoogleFonts.dmSans(fontSize: 11, color: AppTheme.textTertiary),
-        ),
+        Text(label.toUpperCase(),
+            style: AppTheme.label(color: AppTheme.textTertiary)),
         const SizedBox(height: 4),
         Text(
           value,
-          style: GoogleFonts.playfairDisplay(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
+          style: AppTheme.display(
+            size: 22,
+            weight: FontWeight.w700,
             color: color,
+            letterSpacing: -0.6,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildImageResult() {
-    final status = _lastImageResult!['status'] ?? 'UNKNOWN';
-    final categories = ((_lastImageResult!['categories'] as List?) ?? const [])
-        .map((item) => item.toString())
-        .toList();
-    final reason = _lastImageResult!['reason'] ?? '';
-    final confidence = ((_lastImageResult!['confidence'] ?? 0.0) as num) * 100;
-    final filename =
-        _lastImageResult!['filename'] ?? _selectedImageName ?? 'Uploaded image';
-    final engine = _lastImageResult!['engine'] ?? 'Spatial Grid Ensemble';
-    final analysisId = _lastImageResult!['analysisId']?.toString() ?? '--';
-
-    final statusColor = status == 'SAFE'
-        ? AppTheme.success
-        : status == 'REJECTED'
-        ? AppTheme.error
-        : AppTheme.warning;
-
-    return SurfaceCard(
-      padding: EdgeInsets.zero,
-      accentGradient: status == 'SAFE'
-          ? AppTheme.successGradient
-          : status == 'REJECTED'
-          ? AppTheme.dangerGradient
-          : AppTheme.accentGradient,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  statusColor.withValues(alpha: 0.14),
-                  AppTheme.bgSecondary,
-                ],
-              ),
-              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Vision Verdict',
-                            style: GoogleFonts.playfairDisplay(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            filename,
-                            style: GoogleFonts.dmSans(
-                              fontSize: 13,
-                              color: AppTheme.textTertiary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    StatusBadge(text: status, color: statusColor),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _resultRow(
-                        'Confidence',
-                        '${confidence.toStringAsFixed(1)}%',
-                        statusColor,
-                      ),
-                    ),
-                    Expanded(
-                      child: _resultRow(
-                        'Analysis ID',
-                        analysisId,
-                        AppTheme.textPrimary,
-                      ),
-                    ),
-                    Expanded(
-                      child: _resultRow('Engine', engine, AppTheme.amber),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  'Reasoning',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  reason.isEmpty
-                      ? 'No significant violations detected.'
-                      : reason,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 13,
-                    height: 1.6,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Detected categories',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: categories.isEmpty
-                      ? [StatusBadge(text: 'NONE', color: AppTheme.slate)]
-                      : categories
-                            .map(
-                              (category) => StatusBadge(
-                                text: category,
-                                color: statusColor,
-                              ),
-                            )
-                            .toList(),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Chat Tab ──────────────────────────────────────────────────
-  Widget _buildChatTab() {
+  // ── Concierge (chat) ───────────────────────────────────────────
+  Widget _conciergeTab() {
     return Column(
       children: [
-        // Chat header with provider select
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.fromLTRB(20, 12, 16, 12),
           decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: AppTheme.borderDefault)),
+            border: Border(bottom: BorderSide(color: AppTheme.hairline)),
           ),
           child: Row(
             children: [
@@ -1402,159 +1174,106 @@ class _AdminDashboardState extends State<AdminDashboard>
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  gradient: AppTheme.accentGradient,
-                  borderRadius: BorderRadius.circular(10),
+                  color: AppTheme.persimmonSoft,
+                  border: Border.all(color: AppTheme.persimmon, width: 1.2),
                 ),
-                child: const Icon(
-                  Icons.smart_toy_outlined,
-                  color: Colors.white,
-                  size: 18,
-                ),
+                child: const Icon(Icons.auto_awesome,
+                    color: AppTheme.persimmon, size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  'AI Chat',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
+                child: Text('AI CONCIERGE',
+                    style: AppTheme.label(color: AppTheme.ink, size: 11)),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: AppTheme.bgTertiary,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                  border: Border.all(color: AppTheme.borderDefault),
+                  color: AppTheme.paperLight,
+                  border: Border.all(color: AppTheme.ink),
                 ),
                 child: DropdownButton<String>(
                   value: _chatProvider,
                   onChanged: (v) => setState(() => _chatProvider = v!),
                   underline: const SizedBox(),
                   isDense: true,
-                  dropdownColor: AppTheme.bgElevated,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 12,
-                    color: AppTheme.textPrimary,
+                  dropdownColor: AppTheme.paperLight,
+                  style: AppTheme.mono(
+                    size: 11,
+                    color: AppTheme.ink,
+                    weight: FontWeight.w600,
                   ),
-                  items: ['combined', 'opennlp', 'huggingface']
-                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                  items: ['combined', 'groq', 'opennlp', 'huggingface']
+                      .map((m) =>
+                          DropdownMenuItem(value: m, child: Text(m.toUpperCase())))
                       .toList(),
                 ),
               ),
               const SizedBox(width: 8),
               AppIconButton(
-                icon: Icons.delete_outline_rounded,
-                size: 36,
+                icon: Icons.delete_outline,
                 onPressed: () async {
                   try {
-                    await Provider.of<ApiService>(
-                      context,
-                      listen: false,
-                    ).clearChatHistory();
+                    await Provider.of<ApiService>(context, listen: false)
+                        .clearChatHistory();
                     setState(() => _chatMessages.clear());
                   } catch (_) {}
                 },
-                color: AppTheme.error,
+                color: AppTheme.rust,
               ),
             ],
           ),
         ),
-        // Messages
         Expanded(
           child: _chatMessages.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.chat_outlined,
-                        size: 40,
-                        color: AppTheme.textTertiary.withValues(alpha: 0.4),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Start chatting',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 14,
-                          color: AppTheme.textTertiary,
-                        ),
-                      ),
+                      const CrosshairMark(
+                          size: 18, color: AppTheme.persimmon),
+                      const SizedBox(height: 10),
+                      Text('READY FOR YOUR QUERY',
+                          style: AppTheme.label(
+                              color: AppTheme.textTertiary, size: 10)),
                     ],
                   ),
                 )
               : ListView.builder(
                   controller: _chatScrollController,
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(20),
                   itemCount: _chatMessages.length + (_isChatSending ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (index >= _chatMessages.length) {
-                      return _buildTypingDots();
-                    }
-                    return _buildChatBubble(_chatMessages[index]);
+                  itemBuilder: (context, i) {
+                    if (i >= _chatMessages.length) return _typingBlock();
+                    return _chatBlock(_chatMessages[i]);
                   },
                 ),
         ),
-        // Input
         Container(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
           decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: AppTheme.borderDefault)),
+            border: Border(top: BorderSide(color: AppTheme.hairline)),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.bgTertiary,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppTheme.borderActive),
-                  ),
-                  child: TextField(
-                    controller: _chatController,
-                    style: GoogleFonts.dmSans(
-                      color: AppTheme.textPrimary,
-                      fontSize: 14,
-                    ),
-                    maxLines: 2,
-                    minLines: 1,
-                    onSubmitted: (_) => _sendChatMessage(),
-                    decoration: InputDecoration(
-                      hintText: 'Message...',
-                      hintStyle: GoogleFonts.dmSans(
-                        color: AppTheme.textTertiary,
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                    ),
-                  ),
+                child: AppTextField(
+                  controller: _chatController,
+                  label: 'Query',
+                  hint: 'Ask the desk…',
+                  onSubmitted: (_) => _sendChatMessage(),
                 ),
               ),
-              const SizedBox(width: 10),
-              GestureDetector(
-                onTap: _sendChatMessage,
-                child: Container(
-                  width: 44,
+              const SizedBox(width: 14),
+              SizedBox(
+                width: 140,
+                child: ActionButton(
+                  text: 'Wire',
+                  icon: Icons.send_outlined,
+                  onPressed: _isChatSending ? null : _sendChatMessage,
+                  isLoading: _isChatSending,
                   height: 44,
-                  decoration: BoxDecoration(
-                    gradient: AppTheme.accentGradient,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.send_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
                 ),
               ),
             ],
@@ -1564,58 +1283,36 @@ class _AdminDashboardState extends State<AdminDashboard>
     );
   }
 
-  Widget _buildChatBubble(Map<String, String> msg) {
+  Widget _chatBlock(Map<String, String> msg) {
     final isUser = msg['role'] == 'user';
     final isError = msg['role'] == 'error';
+    final color =
+        isError ? AppTheme.rust : (isUser ? AppTheme.persimmon : AppTheme.ink);
+    final label = isUser
+        ? 'YOU'
+        : isError
+            ? 'WIRE ERROR'
+            : 'CONCIERGE';
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        mainAxisAlignment: isUser
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!isUser) ...[
-            CircleAvatar(
-              radius: 14,
-              backgroundColor: isError
-                  ? AppTheme.error.withValues(alpha: 0.15)
-                  : AppTheme.amber.withValues(alpha: 0.15),
-              child: Icon(
-                isError ? Icons.error_outline : Icons.smart_toy_outlined,
-                size: 14,
-                color: isError ? AppTheme.error : AppTheme.amber,
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isUser
-                    ? AppTheme.coral.withValues(alpha: 0.12)
-                    : isError
-                    ? AppTheme.error.withValues(alpha: 0.08)
-                    : AppTheme.bgTertiary,
-                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                border: Border.all(
-                  color: isUser
-                      ? AppTheme.coral.withValues(alpha: 0.2)
-                      : isError
-                      ? AppTheme.error.withValues(alpha: 0.2)
-                      : AppTheme.borderDefault,
-                ),
-              ),
-              child: Text(
-                msg['content'] ?? '',
-                style: GoogleFonts.dmSans(
-                  fontSize: 13,
-                  color: isError ? AppTheme.error : AppTheme.textPrimary,
-                  height: 1.4,
-                ),
-              ),
+          Row(
+            children: [
+              Container(width: 8, height: 1, color: color),
+              const SizedBox(width: 8),
+              Text(label, style: AppTheme.label(color: color, size: 10)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            msg['content'] ?? '',
+            style: AppTheme.body(
+              size: 14,
+              color: isError ? AppTheme.rust : AppTheme.ink,
+              height: 1.55,
             ),
           ),
         ],
@@ -1623,109 +1320,103 @@ class _AdminDashboardState extends State<AdminDashboard>
     );
   }
 
-  Widget _buildTypingDots() {
+  Widget _typingBlock() {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 14,
-            backgroundColor: AppTheme.amber.withValues(alpha: 0.15),
-            child: const Icon(
-              Icons.smart_toy_outlined,
-              size: 14,
-              color: AppTheme.amber,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: AppTheme.bgTertiary,
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-              border: Border.all(color: AppTheme.borderDefault),
-            ),
-            child: Text(
-              '...',
-              style: GoogleFonts.dmSans(
-                fontSize: 16,
+          Text('CONCIERGE',
+              style: AppTheme.label(color: AppTheme.persimmon, size: 10)),
+          const SizedBox(width: 10),
+          Text('typing…',
+              style: AppTheme.body(
+                size: 13,
                 color: AppTheme.textTertiary,
-              ),
-            ),
-          ),
+                style: FontStyle.italic,
+              )),
         ],
       ),
     );
   }
 
-  // ── Users Tab ─────────────────────────────────────────────────
-  Widget _buildUsersTab() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
+  // ── Staff (users) ──────────────────────────────────────────────
+  Widget _staffTab() {
+    return ListView.separated(
+      padding: const EdgeInsets.all(20),
       itemCount: _users.length,
-      itemBuilder: (context, index) => _buildUserCard(_users[index]),
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
+      itemBuilder: (context, index) =>
+          _staffCard(_users[index], index + 1),
     );
   }
 
-  Widget _buildUserCard(dynamic user) {
+  Widget _staffCard(dynamic user, int index) {
     final role = (user['role'] ?? 'USER').toString();
     final roleColor = role.contains('ADMIN')
-        ? AppTheme.coral
+        ? AppTheme.persimmon
         : role.contains('MODERATOR')
-        ? AppTheme.amber
-        : AppTheme.info;
+            ? AppTheme.honey
+            : AppTheme.azure;
+    final username = user['username'] ?? 'Unknown';
+    final initial = username.toString().substring(0, 1).toUpperCase();
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: SurfaceCard(
-        padding: const EdgeInsets.all(16),
-        accentColor: roleColor,
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: roleColor.withValues(alpha: 0.15),
+    return SurfaceCard(
+      padding: const EdgeInsets.all(16),
+      accentColor: roleColor,
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: AppTheme.paperLight,
+              border: Border.all(color: AppTheme.ink),
+            ),
+            child: Center(
               child: Text(
-                (user['username'] ?? '?').substring(0, 1).toUpperCase(),
-                style: GoogleFonts.playfairDisplay(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
-                  color: roleColor,
+                initial,
+                style: AppTheme.display(
+                  size: 26,
+                  weight: FontWeight.w700,
+                  letterSpacing: -1,
                 ),
               ),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user['username'] ?? 'Unknown',
-                    style: GoogleFonts.dmSans(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  StatusBadge(text: role, color: roleColor),
-                ],
-              ),
-            ),
-            PopupMenuButton<String>(
-              onSelected: (newRole) => _updateRole(user['id'], newRole),
-              icon: const Icon(
-                Icons.more_vert_rounded,
-                color: AppTheme.textSecondary,
-              ),
-              itemBuilder: (_) => [
-                _roleItem('USER', 'User'),
-                _roleItem('MODERATOR', 'Moderator'),
-                _roleItem('ADMIN', 'Admin'),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(username,
+                        style: AppTheme.body(
+                          size: 16,
+                          color: AppTheme.ink,
+                          weight: FontWeight.w600,
+                        )),
+                    const SizedBox(width: 10),
+                    Text('N\u00B0 ${index.toString().padLeft(3, '0')}',
+                        style: AppTheme.mono(
+                            size: 10, color: AppTheme.textTertiary)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                StatusBadge(text: role, color: roleColor),
               ],
             ),
-          ],
-        ),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (newRole) => _updateRole(user['id'], newRole),
+            icon: const Icon(Icons.more_horiz, color: AppTheme.ink),
+            itemBuilder: (_) => [
+              _roleItem('USER', 'Reader'),
+              _roleItem('MODERATOR', 'Sub-editor'),
+              _roleItem('ADMIN', 'Editor-in-Chief'),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1733,134 +1424,112 @@ class _AdminDashboardState extends State<AdminDashboard>
   PopupMenuItem<String> _roleItem(String value, String label) {
     return PopupMenuItem(
       value: value,
-      child: Text(
-        label,
-        style: GoogleFonts.dmSans(fontSize: 14, color: AppTheme.textPrimary),
-      ),
+      child: Text(label,
+          style: AppTheme.body(
+            size: 14,
+            color: AppTheme.ink,
+          )),
     );
   }
 
-  // ── Settings Tab ──────────────────────────────────────────────
-  Widget _buildSettingsTab() {
+  // ── Press settings ─────────────────────────────────────────────
+  Widget _pressTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          SurfaceCard(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.all(20),
+      child: SurfaceCard(
+        padding: const EdgeInsets.all(22),
+        accentColor: AppTheme.persimmon,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionHeader(
+              title: 'AI Model',
+              subtitle: 'How the desk decides what reaches print.',
+              index: '\u00A7',
+            ),
+            Row(
               children: [
-                const SectionHeader(
-                  title: 'AI Model',
-                  subtitle: 'Configure moderation thresholds',
-                ),
-                Row(
-                  children: [
-                    Text(
-                      'Confidence Threshold',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                        border: Border.all(
-                          color: AppTheme.primary.withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: Text(
-                        _threshold.toStringAsFixed(2),
-                        style: GoogleFonts.dmSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.primary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: AppTheme.primary,
-                    inactiveTrackColor: AppTheme.bgTertiary,
-                    thumbColor: AppTheme.primary,
-                    overlayColor: AppTheme.primary.withValues(alpha: 0.15),
-                    trackHeight: 4,
+                Text('Confidence Threshold',
+                    style: AppTheme.body(
+                      size: 14,
+                      color: AppTheme.ink,
+                      weight: FontWeight.w600,
+                    )),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.persimmonSoft,
+                    border: Border.all(color: AppTheme.persimmon),
                   ),
-                  child: Slider(
-                    value: _threshold,
-                    min: 0.0,
-                    max: 1.0,
-                    divisions: 20,
-                    onChanged: (v) => setState(() => _threshold = v),
+                  child: Text(
+                    _threshold.toStringAsFixed(2),
+                    style: AppTheme.mono(
+                      size: 11,
+                      color: AppTheme.persimmon,
+                      weight: FontWeight.w700,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Text(
-                      'Active Model',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.bgTertiary,
-                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                        border: Border.all(color: AppTheme.borderDefault),
-                      ),
-                      child: DropdownButton<String>(
-                        value: _activeModel,
-                        onChanged: (v) => setState(() => _activeModel = v!),
-                        underline: const SizedBox(),
-                        isDense: true,
-                        dropdownColor: AppTheme.bgElevated,
-                        style: GoogleFonts.dmSans(
-                          fontSize: 13,
-                          color: AppTheme.textPrimary,
-                        ),
-                        items: _getModelItems()
-                            .map(
-                              (m) => DropdownMenuItem(value: m, child: Text(m)),
-                            )
-                            .toList(),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                ActionButton(
-                  text: 'Save Settings',
-                  icon: Icons.save_rounded,
-                  onPressed: _saveAiSettings,
                 ),
               ],
             ),
-          ),
-        ],
+            Slider(
+              value: _threshold,
+              min: 0,
+              max: 1,
+              divisions: 20,
+              onChanged: (v) => setState(() => _threshold = v),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text('Active Model',
+                    style: AppTheme.body(
+                      size: 14,
+                      color: AppTheme.ink,
+                      weight: FontWeight.w600,
+                    )),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppTheme.paperLight,
+                    border: Border.all(color: AppTheme.ink),
+                  ),
+                  child: DropdownButton<String>(
+                    value: _activeModel,
+                    onChanged: (v) => setState(() => _activeModel = v!),
+                    underline: const SizedBox(),
+                    isDense: true,
+                    dropdownColor: AppTheme.paperLight,
+                    style: AppTheme.mono(
+                      size: 11,
+                      color: AppTheme.ink,
+                      weight: FontWeight.w600,
+                    ),
+                    items: _modelItems()
+                        .map((m) => DropdownMenuItem(
+                            value: m, child: Text(m.toUpperCase())))
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            ActionButton(
+              text: 'Save settings',
+              icon: Icons.save_outlined,
+              onPressed: _saveAiSettings,
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  List<String> _getModelItems() {
+  List<String> _modelItems() {
     final defaults = ['ensemble', 'wordfilter', 'huggingface', 'claude'];
     if (!defaults.contains(_activeModel)) {
       return [_activeModel, ...defaults];
