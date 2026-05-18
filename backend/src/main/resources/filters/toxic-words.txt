@@ -49,6 +49,20 @@ rape
 bomb
 terrorist
 attack
+kill yourself
+go die
+hope you die
+unalive
+sewerslide
+self harm
+suicide
+
+# Internet slang / abbreviations
+kys
+kms
+stfu
+gtfo
+kysf
 
 # Harassment
 stupid
@@ -65,7 +79,11 @@ scum
 disgust
 
 # Bulgarian profanity (Cyrillic)
-майка ти
+самоубий се
+ще те убия
+ще те пребия
+гърни се
+мръвай
 мамка му
 путка
 курва
@@ -80,7 +98,10 @@ disgust
 копеле
 
 # Bulgarian profanity (Latin transliteration)
-maika ti
+samooubi se
+shte te ubiya
+garni se
+mravai
 mamka mu
 putka
 putkata
@@ -111,6 +132,7 @@ pichka
 shibana
 shibano
 da ti eba
-na maika ti
 maika ti da eba
+da ti eba maikata
+eba ti maikata
 

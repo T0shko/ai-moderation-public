@@ -5,7 +5,11 @@ import com.example.aimoderation.model.ImageModerationStatus;
 import com.example.aimoderation.model.User;
 import com.example.aimoderation.repository.ImageModerationRepository;
 import com.example.aimoderation.repository.UserRepository;
+import com.example.aimoderation.service.HuggingFaceIntegrationService;
 import com.example.aimoderation.service.ImageModerationService;
+import com.example.aimoderation.service.LocalImageAnalysisService;
+import com.example.aimoderation.service.TriGuardVisionEnsemble;
+import com.example.aimoderation.util.VisionUserMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,7 +17,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -40,6 +46,12 @@ public class VisionLabController {
   private ImageModerationService imageModerationService;
 
   @Autowired
+  private LocalImageAnalysisService localImageAnalysisService;
+
+  @Autowired
+  private HuggingFaceIntegrationService huggingFaceIntegrationService;
+
+  @Autowired
   private ImageModerationRepository imageModerationRepository;
 
   @Autowired
@@ -47,6 +59,15 @@ public class VisionLabController {
 
   @Value("${moderation.image.max-size:10485760}")
   private long maxImageSize;
+
+  @DeleteMapping({ "", "/" })
+  @PreAuthorize("hasRole('ADMIN')")
+  public ResponseEntity<Map<String, Object>> clearVisionHistory() {
+    long removed = imageModerationService.clearAllResults();
+    return ResponseEntity.ok(Map.of(
+        "message", "All image moderation verdicts cleared.",
+        "removed", removed));
+  }
 
   @GetMapping({ "", "/" })
   public ResponseEntity<?> getVisionLab(
@@ -84,9 +105,12 @@ public class VisionLabController {
   private Map<String, Object> buildVisionLabInfo() {
     Map<String, Object> response = new HashMap<>();
     response.put("title", "Vision Lab");
-    response.put("engine", "Spatial Grid Ensemble");
+    response.put("engine", TriGuardVisionEnsemble.ENGINE_NAME);
+    response.put("layers", List.of("Cloud CLIP", "Edge CLIP ONNX"));
+    response.put("clipModelReady", localImageAnalysisService.isModelReady());
+    response.put("huggingFace", huggingFaceIntegrationService.getStatus());
     response.put("description",
-        "Browser-safe image analysis using JSON uploads and the existing moderation algorithm.");
+        "TriGuard Vision Ensemble: Cloud + Edge CLIP — any layer hit flags content.");
     response.put("methods", List.of("GET", "POST"));
     response.put("endpoint", "/api/vision-lab");
     response.put("acceptedTypes", List.of("image/jpeg", "image/png", "image/gif", "image/webp"));
@@ -161,17 +185,23 @@ public class VisionLabController {
   }
 
   private Map<String, Object> buildAnalysisResponse(ImageModerationResult result) {
+    List<String> categories = parseCategories(result.getDetectedCategories());
     Map<String, Object> response = new HashMap<>();
     response.put("analysisId", result.getId());
     response.put("filename", result.getImageUrl());
     response.put("status", result.getStatus().name());
+    response.put("message", VisionUserMessage.forStatus(result.getStatus(), categories));
     response.put("confidence", result.getConfidenceScore() != null ? result.getConfidenceScore() : 0.0);
-    response.put("categories", parseCategories(result.getDetectedCategories()));
-    response.put("reason", result.getModerationReason() != null ? result.getModerationReason() : "");
-    response.put("labels", result.getClipLabels() != null ? result.getClipLabels() : List.of());
+    response.put("categories", categories);
     response.put("createdAt", result.getCreatedAt());
     response.put("moderatedAt", result.getModeratedAt());
-    response.put("engine", "Spatial Grid Ensemble");
+    response.put("clipModelReady", localImageAnalysisService.isModelReady());
+    // Debug-only fields (clients should log, not show in UI)
+    response.put("reason", result.getModerationReason() != null ? result.getModerationReason() : "");
+    response.put("labels", result.getClipLabels() != null ? result.getClipLabels() : List.of());
+    response.put("layers", result.getTriGuardLayers() != null ? result.getTriGuardLayers() : List.of());
+    response.put("engine", TriGuardVisionEnsemble.ENGINE_NAME);
+    response.put("ensemblePolicy", "OR");
     return response;
   }
 

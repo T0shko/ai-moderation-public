@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 public class CommentResponse {
     private Long id;
     private String content;
+    private String imageUrl;
     private UserPublicDto author;
     private String sentiment;
     private Double confidenceScore;
@@ -25,6 +26,7 @@ public class CommentResponse {
         CommentResponse dto = new CommentResponse();
         dto.id = comment.getId();
         dto.content = comment.getContent();
+        dto.imageUrl = comment.getImageUrl();
         dto.author = comment.getAuthor() != null ? UserPublicDto.from(comment.getAuthor()) : null;
         dto.sentiment = comment.getSentiment() != null ? comment.getSentiment().name() : null;
         dto.confidenceScore = comment.getConfidenceScore();
@@ -36,6 +38,7 @@ public class CommentResponse {
 
     public Long getId() { return id; }
     public String getContent() { return content; }
+    public String getImageUrl() { return imageUrl; }
     public UserPublicDto getAuthor() { return author; }
     public String getSentiment() { return sentiment; }
     public Double getConfidenceScore() { return confidenceScore; }

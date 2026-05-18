@@ -61,10 +61,17 @@ public final class TextNormalizer {
     private static String cyrillicHomoglyphsToLatin(String text) {
         return text
                 .replace('а', 'a')
+                .replace('в', 'b')
                 .replace('е', 'e')
+                .replace('к', 'k')
+                .replace('м', 'm')
+                .replace('н', 'h')
                 .replace('о', 'o')
-                .replace('с', 'c')
                 .replace('р', 'p')
-                .replace('х', 'x');
+                .replace('с', 'c')
+                .replace('т', 't')
+                .replace('у', 'y')
+                .replace('х', 'x')
+                .replace('і', 'i');
     }
 }

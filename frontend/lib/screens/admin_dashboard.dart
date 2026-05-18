@@ -5,7 +5,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/moderation_debug.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/moderation_banner.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -19,6 +21,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   late TabController _tabController;
   List<dynamic> _users = [];
   List<dynamic> _allComments = [];
+  List<dynamic> _approvedComments = [];
   bool _isLoading = false;
   String? _error;
   double _threshold = 0.6;
@@ -29,6 +32,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   bool _isPostingTest = false;
   Map<String, dynamic>? _lastTestResult;
   bool _isTestingImage = false;
+  bool _visionShowDebug = false;
   Map<String, dynamic>? _lastImageResult;
   Map<String, dynamic>? _visionLabInfo;
   String? _visionLabError;
@@ -43,7 +47,14 @@ class _AdminDashboardState extends State<AdminDashboard>
   bool _isChatSending = false;
   String _chatProvider = 'combined';
 
-  static const _sections = ['Overview', 'Sandbox', 'Concierge', 'Staff', 'Press'];
+  static const _sections = [
+    'Overview',
+    'Published',
+    'Sandbox',
+    'Concierge',
+    'Staff',
+    'Press',
+  ];
 
   @override
   void initState() {
@@ -71,6 +82,7 @@ class _AdminDashboardState extends State<AdminDashboard>
       final api = Provider.of<ApiService>(context, listen: false);
       final users = await api.getUsers();
       final comments = await api.getAllCommentsAdmin();
+      final approved = await api.getApprovedCommentsAdmin();
       Map<String, dynamic>? visionLabInfo;
       String? visionLabError;
       try {
@@ -87,6 +99,7 @@ class _AdminDashboardState extends State<AdminDashboard>
         setState(() {
           _users = users;
           _allComments = comments;
+          _approvedComments = approved;
           _visionLabInfo = visionLabInfo;
           _visionLabError = visionLabError;
         });
@@ -97,6 +110,19 @@ class _AdminDashboardState extends State<AdminDashboard>
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _removePublishedComment(int id) async {
+    try {
+      final api = Provider.of<ApiService>(context, listen: false);
+      await api.deleteCommentAdmin(id);
+      _snack('Removed from public feed');
+      _loadData();
+    } on AuthException {
+      return;
+    } catch (_) {
+      _snack('Failed to remove comment', isError: true);
     }
   }
 
@@ -206,17 +232,52 @@ class _AdminDashboardState extends State<AdminDashboard>
     }
   }
 
+  String _uniqueVisionFilename(String name) {
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final dot = name.lastIndexOf('.');
+    if (dot > 0) {
+      return '${name.substring(0, dot)}_$stamp${name.substring(dot)}';
+    }
+    return '${name}_$stamp.jpg';
+  }
+
+  void _clearVisionHistory() async {
+    try {
+      final api = Provider.of<ApiService>(context, listen: false);
+      await api.clearImageModerationHistory();
+      if (mounted) {
+        setState(() {
+          _lastImageResult = null;
+          _selectedImageBytes = null;
+          _selectedImageName = null;
+          _selectedImageSize = null;
+          _selectedImageContentType = null;
+        });
+        _refreshVisionLabInfo();
+        _snack('Cleared all image verdicts from database');
+      }
+    } on AuthException {
+      return;
+    } catch (e) {
+      _snack('Clear failed: $e', isError: true);
+    }
+  }
+
   void _analyzeVisionImage() async {
     if (_selectedImageBytes == null || _selectedImageName == null) {
       _snack('Choose an image first', isError: true);
       return;
     }
-    setState(() => _isTestingImage = true);
+    setState(() {
+      _isTestingImage = true;
+      _lastImageResult = null;
+      _visionShowDebug = false;
+    });
     try {
       final api = Provider.of<ApiService>(context, listen: false);
       final imageResult = await api.analyzeVisionImage(
         _selectedImageBytes!,
-        _selectedImageName!,
+        _uniqueVisionFilename(_selectedImageName!),
         _selectedImageContentType,
       );
       Map<String, dynamic>? visionLabInfo = _visionLabInfo;
@@ -227,12 +288,14 @@ class _AdminDashboardState extends State<AdminDashboard>
         visionLabError = e.toString().replaceFirst('Exception: ', '');
       }
       if (mounted) {
+        logVisionScan('vision-lab', imageResult);
         setState(() {
           _lastImageResult = imageResult;
           _visionLabInfo = visionLabInfo;
           _visionLabError = visionLabError;
         });
-        _snack('Verdict in');
+        final msg = imageResult['message']?.toString() ?? 'Scan complete';
+        _snack(msg);
       }
     } catch (e) {
       _snack('Vision Lab failed: $e', isError: true);
@@ -368,6 +431,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                             controller: _tabController,
                             children: [
                               _overviewTab(),
+                              _publishedTab(),
                               _sandboxTab(),
                               _conciergeTab(),
                               _staffTab(),
@@ -693,6 +757,131 @@ class _AdminDashboardState extends State<AdminDashboard>
     );
   }
 
+  Widget _publishedTab() {
+    return RefreshIndicator(
+      onRefresh: () async => _loadData(),
+      color: AppTheme.ink,
+      backgroundColor: AppTheme.paperLight,
+      child: _approvedComments.isEmpty
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(32),
+              children: [
+                Center(
+                  child: Text(
+                    'No approved dispatches on the wire yet.',
+                    style: AppTheme.body(
+                      size: 14,
+                      color: AppTheme.textTertiary,
+                      style: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(20),
+              itemCount: _approvedComments.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final comment = _approvedComments[index];
+                final author =
+                    comment['author']?['username']?.toString() ?? 'Unknown';
+                final createdAt = comment['createdAt']?.toString() ?? '';
+                final timeLabel = createdAt.length >= 16
+                    ? createdAt.substring(0, 16).replaceFirst('T', ' ')
+                    : '';
+
+                return SurfaceCard(
+                  padding: const EdgeInsets.all(16),
+                  accentColor: AppTheme.olive,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              author,
+                              style: AppTheme.body(
+                                size: 14,
+                                weight: FontWeight.w600,
+                                color: AppTheme.ink,
+                              ),
+                            ),
+                          ),
+                          if (timeLabel.isNotEmpty)
+                            Text(
+                              timeLabel,
+                              style: AppTheme.mono(
+                                size: 10,
+                                color: AppTheme.textTertiary,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        comment['content']?.toString() ?? '',
+                        style: AppTheme.body(
+                          size: 15,
+                          color: AppTheme.textSecondary,
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ActionButton(
+                          text: 'Remove from feed',
+                          icon: Icons.delete_outline,
+                          onPressed: () => _confirmRemovePublished(
+                            comment['id'] as int,
+                            author,
+                          ),
+                          secondary: true,
+                          backgroundColor: AppTheme.paperLight,
+                          height: 40,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  void _confirmRemovePublished(int id, String author) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.paperLight,
+        title: Text('Remove dispatch?',
+            style: AppTheme.body(size: 18, weight: FontWeight.w600)),
+        content: Text(
+          'Remove $author\u2019s published comment from the public feed? This cannot be undone.',
+          style: AppTheme.body(size: 14, color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: AppTheme.label(color: AppTheme.textTertiary)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _removePublishedComment(id);
+            },
+            child:
+                Text('Remove', style: AppTheme.label(color: AppTheme.rust)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Sandbox (text + vision) ────────────────────────────────────
   Widget _sandboxTab() {
     return SingleChildScrollView(
@@ -713,202 +902,149 @@ class _AdminDashboardState extends State<AdminDashboard>
   }
 
   Widget _visionLabPanel() {
-    final totalAnalyses =
-        _visionLabInfo?['totalAnalyses']?.toString() ?? '0';
+    final staged = _selectedImageBytes != null;
     final maxSizeLabel =
         _visionLabInfo?['maxSizeLabel']?.toString() ?? '10 MB';
-    final acceptedTypes =
-        (_visionLabInfo?['acceptedTypes'] as List?)
-                ?.map((t) =>
-                    t.toString().replaceFirst('image/', '').toUpperCase())
-                .join('  \u00B7  ') ??
-            'JPEG  \u00B7  PNG  \u00B7  GIF  \u00B7  WEBP';
-    final staged = _selectedImageName != null;
 
     return SurfaceCard(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       accentColor: AppTheme.persimmon,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Text('§ VISION LAB',
-                  style: AppTheme.label(color: AppTheme.persimmon, size: 11)),
-              const Spacer(),
-              AppIconButton(
-                icon: Icons.sync_rounded,
-                onPressed: _refreshVisionLabInfo,
-                tooltip: 'Refresh',
-                size: 34,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          RichText(
-            text: TextSpan(
-              style: AppTheme.display(
-                size: 30,
-                weight: FontWeight.w700,
-                letterSpacing: -1,
-                height: 1.05,
-              ),
-              children: [
-                const TextSpan(text: 'Drop a photograph,\nrun the '),
-                TextSpan(
-                  text: 'verdict',
-                  style: AppTheme.display(
-                    size: 30,
-                    weight: FontWeight.w400,
-                    style: FontStyle.italic,
-                    letterSpacing: -1,
-                    color: AppTheme.persimmon,
-                    height: 1.05,
-                  ),
-                ),
-                const TextSpan(text: '.'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'JSON transport. GET reports lab metadata, POST runs the analysis.',
-            style: AppTheme.body(
-              size: 14,
-              color: AppTheme.textSecondary,
-              style: FontStyle.italic,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _ledgerCell('TOTAL', totalAnalyses),
+              const Text('🖼️', style: TextStyle(fontSize: 28)),
               const SizedBox(width: 10),
-              _ledgerCell('MAX SIZE', maxSizeLabel),
-              const SizedBox(width: 10),
-              _ledgerCell('METHODS', 'GET + POST'),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-            decoration: BoxDecoration(
-              color: AppTheme.paper,
-              border: Border.all(
-                color: staged ? AppTheme.persimmon : AppTheme.hairline,
-                width: 1.2,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: staged
-                            ? AppTheme.persimmonSoft
-                            : AppTheme.paperLight,
-                        border: Border.all(
-                          color: staged ? AppTheme.persimmon : AppTheme.ink,
-                          width: 1.2,
-                        ),
-                      ),
-                      child: Icon(
-                        staged ? Icons.check : Icons.image_outlined,
-                        size: 20,
-                        color: staged ? AppTheme.persimmon : AppTheme.ink,
+                    Text(
+                      'Photo checker',
+                      style: AppTheme.display(
+                        size: 22,
+                        weight: FontWeight.w700,
+                        letterSpacing: -0.6,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            staged
-                                ? (_selectedImageName ?? 'Image staged')
-                                : 'No image staged',
-                            style: AppTheme.body(
-                              size: 14,
-                              color: AppTheme.ink,
-                              weight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            staged
-                                ? '${(_selectedImageSize! / 1024).toStringAsFixed(1)} KB \u00B7 ${_selectedImageContentType ?? 'image/jpeg'}'
-                                : 'Choose a file and run the press.',
-                            style: AppTheme.mono(
-                              size: 10,
-                              color: AppTheme.textTertiary,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      'Test what users can upload · max $maxSizeLabel',
+                      style: AppTheme.body(
+                        size: 13,
+                        color: AppTheme.textSecondary,
                       ),
-                    ),
-                    StatusBadge(
-                      text: staged ? 'READY' : 'IDLE',
-                      color: staged ? AppTheme.persimmon : AppTheme.slate,
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  acceptedTypes,
-                  style: AppTheme.mono(size: 10, color: AppTheme.textTertiary),
-                ),
-              ],
-            ),
+              ),
+              AppIconButton(
+                icon: Icons.delete_sweep_outlined,
+                onPressed: _clearVisionHistory,
+                tooltip: 'Clear scan history',
+                size: 34,
+                color: AppTheme.rust,
+              ),
+            ],
           ),
+          const SizedBox(height: 16),
+          if (staged) ...[
+            Container(
+              width: double.infinity,
+              height: 220,
+              decoration: BoxDecoration(
+                color: AppTheme.paper,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.hairline),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(11),
+                child: Image.memory(
+                  _selectedImageBytes!,
+                  width: double.infinity,
+                  height: 220,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.center,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
+            ),
+            if (_selectedImageName != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                '${_selectedImageName!} · ${(_selectedImageSize! / 1024).toStringAsFixed(1)} KB',
+                style: AppTheme.mono(size: 10, color: AppTheme.textTertiary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 12),
+          ] else
+            Container(
+              height: 120,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppTheme.paper,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.hairline),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add_photo_alternate_outlined,
+                      size: 36, color: AppTheme.textTertiary),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Pick a photo to test',
+                    style: AppTheme.body(
+                      size: 14,
+                      color: AppTheme.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
                 child: ActionButton(
-                  text: 'Choose image',
-                  icon: Icons.add_photo_alternate_outlined,
+                  text: 'Choose photo',
+                  icon: Icons.image_outlined,
                   onPressed: _pickVisionImage,
                   secondary: true,
                   backgroundColor: AppTheme.paperLight,
                   height: 44,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: ActionButton(
-                  text: 'Run verdict',
-                  icon: Icons.bolt_outlined,
+                  text: 'Check photo',
+                  icon: Icons.shield_outlined,
                   isLoading: _isTestingImage,
-                  onPressed: _selectedImageBytes == null
-                      ? null
-                      : _analyzeVisionImage,
+                  onPressed: staged ? _analyzeVisionImage : null,
                   backgroundColor: AppTheme.persimmon,
                   height: 44,
                 ),
               ),
             ],
           ),
+          if (_isTestingImage) ...[
+            const SizedBox(height: 14),
+            const ModerationScanningBanner(),
+          ],
           if (_visionLabError != null) ...[
             const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.rustSoft,
-                border: Border.all(color: AppTheme.rust),
-              ),
-              child: Text(
-                _visionLabError!,
-                style: AppTheme.mono(size: 11, color: AppTheme.rust),
-              ),
+            const ModerationBanner(status: 'ERROR'),
+            const SizedBox(height: 6),
+            Text(
+              _visionLabError!,
+              style: AppTheme.body(size: 13, color: AppTheme.rust),
             ),
           ],
-          if (_lastImageResult != null) ...[
-            const SizedBox(height: 18),
+          if (!_isTestingImage && _lastImageResult != null) ...[
+            const SizedBox(height: 14),
             _imageResult(),
           ],
         ],
@@ -961,35 +1097,6 @@ class _AdminDashboardState extends State<AdminDashboard>
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _ledgerCell(String label, String value) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppTheme.paper,
-          border: Border.all(color: AppTheme.hairline),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: AppTheme.label(color: AppTheme.textTertiary)),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTheme.mono(
-                size: 13,
-                color: AppTheme.ink,
-                weight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1048,8 +1155,8 @@ class _AdminDashboardState extends State<AdminDashboard>
               const SizedBox(width: 8),
               Text(
                 wouldApprove
-                    ? 'Would be published automatically'
-                    : 'Would be held for review ($status)',
+                    ? 'Ready for users: published (APPROVED)'
+                    : 'Ready for users: blocked ($status)',
                 style: AppTheme.body(
                   size: 13,
                   color: wouldApprove ? AppTheme.olive : AppTheme.rust,
@@ -1073,100 +1180,78 @@ class _AdminDashboardState extends State<AdminDashboard>
   }
 
   Widget _imageResult() {
-    final status = _lastImageResult!['status'] ?? 'UNKNOWN';
-    final categories = ((_lastImageResult!['categories'] as List?) ?? const [])
-        .map((item) => item.toString())
-        .toList();
-    final reason = _lastImageResult!['reason'] ?? '';
-    final clipLabels = ((_lastImageResult!['labels'] as List?) ?? const [])
-        .map((item) => item.toString())
+    final analysisId = _lastImageResult!['analysisId']?.toString() ?? '--';
+    final clipReady = _lastImageResult!['clipModelReady'] == true;
+    final layers = ((_lastImageResult!['layers'] as List?) ?? const [])
+        .map((e) => e.toString())
         .toList();
     final confidence =
         ((_lastImageResult!['confidence'] ?? 0.0) as num) * 100;
-    final filename = _lastImageResult!['filename'] ??
-        _selectedImageName ??
-        'Uploaded image';
-    final engine = _lastImageResult!['engine'] ?? 'Spatial Grid Ensemble';
-    final analysisId = _lastImageResult!['analysisId']?.toString() ?? '--';
-    final statusColor = status == 'SAFE'
-        ? AppTheme.olive
-        : status == 'REJECTED'
-            ? AppTheme.rust
-            : AppTheme.honey;
 
-    return SurfaceCard(
-      padding: const EdgeInsets.all(20),
-      accentColor: statusColor,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text('Vision Verdict',
-                    style: AppTheme.display(
-                      size: 24,
-                      weight: FontWeight.w700,
-                      letterSpacing: -0.8,
-                    )),
-              ),
-              StatusBadge(text: status, color: statusColor, stamp: true),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(filename,
-              style:
-                  AppTheme.mono(size: 11, color: AppTheme.textTertiary)),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _kv('Confidence',
-                    '${confidence.toStringAsFixed(1)}%', statusColor),
-              ),
-              Expanded(child: _kv('Analysis ID', analysisId, AppTheme.ink)),
-              Expanded(child: _kv('Engine', engine, AppTheme.persimmon)),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text('REASONING',
-              style: AppTheme.label(color: AppTheme.textSecondary)),
-          const SizedBox(height: 6),
-          Text(
-            reason.isEmpty
-                ? (status == 'SAFE'
-                    ? 'No significant violations detected.'
-                    : 'Violation detected — see categories below.')
-                : reason,
-            style: AppTheme.body(size: 14, color: AppTheme.textSecondary),
-          ),
-          if (clipLabels.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text('CLIP SCORES (DEBUG)',
-                style: AppTheme.label(color: AppTheme.textSecondary)),
-            const SizedBox(height: 6),
-            Text(
-              clipLabels.join(', '),
-              style: AppTheme.mono(size: 11, color: AppTheme.textTertiary),
-            ),
-          ],
-          const SizedBox(height: 14),
-          Text('CATEGORIES',
-              style: AppTheme.label(color: AppTheme.textSecondary)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ModerationBanner.fromScan(_lastImageResult!),
+        const SizedBox(height: 6),
+        Text(
+          'Check #$analysisId · fresh scan (not cached)',
+          style: AppTheme.mono(size: 10, color: AppTheme.textTertiary),
+        ),
+        if (!clipReady) ...[
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: categories.isEmpty
-                ? [StatusBadge(text: 'NONE', color: AppTheme.slate)]
-                : categories
-                    .map(
-                      (c) => StatusBadge(text: c, color: statusColor),
-                    )
-                    .toList(),
+          Text(
+            'Local model offline — run ./scripts/setup-clip-model.sh',
+            style: AppTheme.body(size: 12, color: AppTheme.rust),
           ),
         ],
-      ),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: () => setState(() => _visionShowDebug = !_visionShowDebug),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Icon(
+                  _visionShowDebug
+                      ? Icons.expand_less
+                      : Icons.expand_more,
+                  size: 18,
+                  color: AppTheme.textTertiary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Technical details (for developers)',
+                  style: AppTheme.label(
+                    color: AppTheme.textTertiary,
+                    size: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_visionShowDebug) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.paper,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.hairline),
+            ),
+            child: SelectableText(
+              [
+                'Confidence: ${confidence.toStringAsFixed(1)}%',
+                if (layers.isNotEmpty) 'Layers:\n${layers.join('\n')}',
+                if ((_lastImageResult!['reason']?.toString() ?? '').isNotEmpty)
+                  'Reason: ${_lastImageResult!['reason']}',
+              ].join('\n\n'),
+              style: AppTheme.mono(size: 10, color: AppTheme.textTertiary),
+            ),
+          ),
+        ],
+      ],
     );
   }
 

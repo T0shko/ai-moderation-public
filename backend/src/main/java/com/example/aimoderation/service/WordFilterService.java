@@ -34,10 +34,18 @@ public class WordFilterService {
     @Value("${filter.sensitive-subjects.path:filters/sensitive-subjects.txt}")
     private String sensitiveSubjectsPath;
 
+    @Value("${filter.slang-toxic.path:filters/slang-toxic.txt}")
+    private String slangToxicPath;
+
+    @Value("${filter.phrases-toxic.path:filters/phrases-toxic.txt}")
+    private String phrasesToxicPath;
+
     private volatile Set<String> toxicWords = Set.of();
     private volatile Set<String> negativeIndicators = Set.of();
     private volatile Set<String> positiveWords = Set.of();
     private volatile Set<String> sensitiveSubjects = Set.of();
+    private volatile Set<String> slangToxic = Set.of();
+    private volatile Set<String> phrasesToxic = Set.of();
 
     @PostConstruct
     public void init() {
@@ -50,8 +58,11 @@ public class WordFilterService {
         negativeIndicators = loadFilterFile(negativeIndicatorsPath, "negative indicators");
         positiveWords = loadFilterFile(positiveWordsPath, "positive words");
         sensitiveSubjects = loadFilterFile(sensitiveSubjectsPath, "sensitive subjects");
-        logger.info("Word filters reloaded: {} toxic, {} negative, {} positive, {} sensitive",
-                toxicWords.size(), negativeIndicators.size(), positiveWords.size(), sensitiveSubjects.size());
+        slangToxic = loadFilterFile(slangToxicPath, "slang toxic");
+        phrasesToxic = loadFilterFile(phrasesToxicPath, "phrases toxic");
+        logger.info("Word filters reloaded: {} toxic, {} slang, {} phrases, {} negative, {} positive, {} sensitive",
+                toxicWords.size(), slangToxic.size(), phrasesToxic.size(),
+                negativeIndicators.size(), positiveWords.size(), sensitiveSubjects.size());
     }
 
     private Set<String> loadFilterFile(String path, String filterName) {
@@ -95,6 +106,14 @@ public class WordFilterService {
         return sensitiveSubjects;
     }
 
+    public Set<String> getSlangToxic() {
+        return slangToxic;
+    }
+
+    public Set<String> getPhrasesToxic() {
+        return phrasesToxic;
+    }
+
     public boolean containsToxicWord(String text) {
         return matchesAny(text, toxicWords);
     }
@@ -123,13 +142,21 @@ public class WordFilterService {
         return filterWords.stream().anyMatch(word -> wordMatches(normalized, compact, word));
     }
 
-    private boolean wordMatches(String normalized, String compact, String word) {
-        if (word.contains(" ")) {
-            return normalized.contains(word) || compact.contains(word.replace(" ", ""));
+    boolean wordMatches(String normalized, String compact, String word) {
+        if (word == null || word.isBlank()) return false;
+        String w = word.trim().toLowerCase();
+        if (w.contains(" ")) {
+            return normalized.contains(w) || compact.contains(w.replace(" ", ""));
         }
-        if (normalized.contains(word) || compact.contains(word)) {
-            String pattern = "(?<![a-zA-Z])" + Pattern.quote(word) + "(?![a-zA-Z])";
-            return Pattern.compile(pattern).matcher(normalized).find() || compact.contains(word);
+        if (compact.contains(w)) {
+            return true;
+        }
+        if (normalized.contains(w)) {
+            String latinBoundary = "(?<![a-zA-Z])" + Pattern.quote(w) + "(?![a-zA-Z])";
+            String cyrillicBoundary = "(?<![\\p{IsCyrillic}])" + Pattern.quote(w) + "(?![\\p{IsCyrillic}])";
+            return Pattern.compile(latinBoundary).matcher(normalized).find()
+                    || Pattern.compile(cyrillicBoundary).matcher(normalized).find()
+                    || w.length() <= 4;
         }
         return false;
     }

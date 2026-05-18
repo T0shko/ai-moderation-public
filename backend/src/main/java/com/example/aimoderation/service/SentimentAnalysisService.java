@@ -17,13 +17,15 @@ import java.util.stream.Collectors;
 public class SentimentAnalysisService {
 
     private static final Pattern LONG_CONSONANTS = Pattern.compile(
-            "[^aeiouаеиоуъяю\\s]{7,}", Pattern.CASE_INSENSITIVE);
+            "[^aeiouаеиоуъяю\\s]{7,}", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     private static final Pattern OBFUSCATION_PATTERNS = Pattern.compile(
             "f[\\*#@$.\\-_]?[uv][\\*#@$.\\-_]?[c]?[\\*#@$.\\-_]?[k]|"
                     + "ph[uv]ck|sh[\\*#@$.\\-_]?[i1!][\\*#@$.\\-_]?t|\\$h[i1!]t|"
                     + "[a@][\\*#@$.\\-_]?[s$][\\*#@$.\\-_]?[s$]|"
                     + "b[\\*#@$.\\-_]?[i1!][\\*#@$.\\-_]?t[\\*#@$.\\-_]?c[\\*#@$.\\-_]?h|"
-                    + "n[\\*#@$.\\-_]?[i1!][\\*#@$.\\-_]?g+[\\*#@$.\\-_]?[ae@]?",
+                    + "n[\\*#@$.\\-_]?[i1!][\\*#@$.\\-_]?g+[\\*#@$.\\-_]?[ae@]?|"
+                    + "k[\\*#@$.\\-_]?[y1][\\*#@$.\\-_]?[s$5]|"
+                    + "k[\\*#@$.\\-_]?[m][\\*#@$.\\-_]?[s$5]",
             Pattern.CASE_INSENSITIVE);
 
     private final AtomicReference<Set<String>> learnedNegativeCache = new AtomicReference<>(Set.of());
@@ -35,6 +37,15 @@ public class SentimentAnalysisService {
 
     @Autowired
     private WordFilterService wordFilterService;
+
+    @Autowired
+    private ContextualTextModeration contextualTextModeration;
+
+    @Autowired
+    private TextContextAiService textContextAiService;
+
+    @Autowired
+    private TextVerdictResolverService textVerdictResolverService;
 
     public AnalysisResult analyze(String text) {
         if (text == null || text.trim().isEmpty()) {
@@ -50,19 +61,54 @@ public class SentimentAnalysisService {
                     "Gibberish or spam-like text detected.", false, true);
         }
 
+        // Pragmatic context (thesis §1.3) before lexical phases
+        ContextualTextModeration.ContextVerdict contextVerdict =
+                contextualTextModeration.analyze(normalized);
+        if (contextVerdict == ContextualTextModeration.ContextVerdict.MALICIOUS) {
+            return new AnalysisResult(Sentiment.NEGATIVE, 0.92,
+                    "Phase context: insulting phrase.", false, false);
+        }
+        if (contextVerdict == ContextualTextModeration.ContextVerdict.BENIGN) {
+            return new AnalysisResult(Sentiment.POSITIVE, 0.82,
+                    "Phase context: benign phrasing (e.g. compliment or colloquial).", false, false);
+        }
+
         Set<String> toxicWords = wordFilterService.getToxicWords();
+        Set<String> slangToxic = wordFilterService.getSlangToxic();
+        Set<String> phrasesToxic = wordFilterService.getPhrasesToxic();
         Set<String> negativeIndicators = wordFilterService.getNegativeIndicators();
         Set<String> positiveWords = wordFilterService.getPositiveWords();
         Set<String> sensitiveSubjects = wordFilterService.getSensitiveSubjects();
         Set<String> learnedNegative = getLearnedNegativeTokens();
 
+        String primaryMatch = null;
         int toxicCount = 0;
         double toxicSeverity = 0.0;
 
+        for (String phrase : phrasesToxic) {
+            if (wordFilterService.wordMatches(normalized, compact, phrase)
+                    && !contextualTextModeration.shouldSuppressTokenMatch(normalized, phrase)) {
+                toxicCount++;
+                toxicSeverity += 4.0;
+                if (primaryMatch == null) primaryMatch = phrase;
+            }
+        }
+
+        for (String slang : slangToxic) {
+            if (wordFilterService.wordMatches(normalized, compact, slang)
+                    && !contextualTextModeration.shouldSuppressTokenMatch(normalized, slang)) {
+                toxicCount++;
+                toxicSeverity += 3.5;
+                if (primaryMatch == null) primaryMatch = slang;
+            }
+        }
+
         for (String word : toxicWords) {
-            if (containsWord(normalized, compact, word)) {
+            if (wordFilterService.wordMatches(normalized, compact, word)
+                    && !contextualTextModeration.shouldSuppressTokenMatch(normalized, word)) {
                 toxicCount++;
                 toxicSeverity += 3.0;
+                if (primaryMatch == null) primaryMatch = word;
             }
         }
 
@@ -70,18 +116,29 @@ public class SentimentAnalysisService {
         if (obfuscated > 0) {
             toxicCount += obfuscated;
             toxicSeverity += obfuscated * 2.5;
+            if (primaryMatch == null) primaryMatch = "obfuscated toxic pattern";
         }
 
         if (toxicCount > 0) {
+            if (textContextAiService.isAvailable()) {
+                TextContextAiService.AiVerdict aiVerdict = textContextAiService.adjudicate(originalText);
+                if (aiVerdict == TextContextAiService.AiVerdict.SAFE) {
+                    return new AnalysisResult(Sentiment.POSITIVE, 0.78,
+                            "AI context check: acceptable phrasing despite keyword overlap.", false, false);
+                }
+            }
             String[] words = normalized.split("\\s+");
             double toxicRatio = (double) toxicCount / Math.max(words.length, 1);
             double confidence = Math.min(0.7 + (toxicSeverity * 0.05) + (toxicRatio * 0.2), 0.99);
-            return new AnalysisResult(Sentiment.NEGATIVE, confidence,
-                    "Toxic language detected (" + toxicCount + " match(es)).", false, false);
+            String reason = primaryMatch != null
+                    ? "Toxic language detected — primary match: \"" + primaryMatch + "\"."
+                    : "Toxic language detected.";
+            return new AnalysisResult(Sentiment.NEGATIVE, confidence, reason, false, false);
         }
 
         for (String token : learnedNegative) {
-            if (containsWord(normalized, compact, token)) {
+            if (wordFilterService.wordMatches(normalized, compact, token)
+                    && !contextualTextModeration.shouldSuppressTokenMatch(normalized, token)) {
                 return new AnalysisResult(Sentiment.NEGATIVE, 0.85,
                         "Matches a pattern from moderator training data.", false, false);
             }
@@ -92,7 +149,7 @@ public class SentimentAnalysisService {
         List<String> matchedNegative = new ArrayList<>();
 
         for (String word : negativeIndicators) {
-            if (containsWord(normalized, compact, word)) {
+            if (wordFilterService.wordMatches(normalized, compact, word)) {
                 negativeScore += 1.5;
                 negativeCount++;
                 matchedNegative.add(word);
@@ -102,19 +159,21 @@ public class SentimentAnalysisService {
         boolean sensitiveOnly = false;
         List<String> matchedSensitive = new ArrayList<>();
         for (String subject : sensitiveSubjects) {
-            if (containsWord(normalized, compact, subject)) {
+            if (wordFilterService.wordMatches(normalized, compact, subject)
+                    && !contextualTextModeration.shouldSuppressTokenMatch(normalized, subject)) {
                 negativeScore += 1.0;
                 matchedSensitive.add(subject);
             }
         }
-        if (!matchedSensitive.isEmpty() && matchedNegative.isEmpty() && toxicCount == 0) {
+        if (!matchedSensitive.isEmpty() && matchedNegative.isEmpty() && toxicCount == 0
+                && !contextualTextModeration.isBenignFamilyContext(normalized)) {
             sensitiveOnly = true;
         }
 
         double positiveScore = 0;
         int positiveCount = 0;
         for (String word : positiveWords) {
-            if (containsWord(normalized, compact, word)) {
+            if (wordFilterService.wordMatches(normalized, compact, word)) {
                 positiveScore += 1.0;
                 positiveCount++;
             }
@@ -127,6 +186,15 @@ public class SentimentAnalysisService {
         }
 
         if (sensitiveOnly) {
+            TextContextAiService.AiVerdict aiVerdict = textContextAiService.adjudicate(originalText);
+            if (aiVerdict == TextContextAiService.AiVerdict.SAFE) {
+                return new AnalysisResult(Sentiment.POSITIVE, 0.8,
+                        "AI context check: acceptable phrasing.", false, false);
+            }
+            if (aiVerdict == TextContextAiService.AiVerdict.TOXIC) {
+                return new AnalysisResult(Sentiment.NEGATIVE, 0.88,
+                        "AI context check: policy violation.", false, false);
+            }
             return new AnalysisResult(Sentiment.NEGATIVE, 0.75,
                     "Sensitive subject detected: " + String.join(", ", matchedSensitive) + ".",
                     true, false);
@@ -144,22 +212,9 @@ public class SentimentAnalysisService {
                     "Positive sentiment detected.", false, false);
         }
 
-        return new AnalysisResult(Sentiment.NEUTRAL, 0.5,
-                "No strong moderation signals; review recommended if unsure.", false, false);
-    }
-
-    boolean containsWord(String normalized, String compact, String word) {
-        if (word == null || word.isBlank()) return false;
-        String w = word.trim().toLowerCase();
-        if (w.contains(" ")) {
-            return normalized.contains(w) || compact.contains(w.replace(" ", ""));
-        }
-        if (normalized.contains(w) || compact.contains(w)) {
-            String pattern = "(?<![a-zA-Z])" + Pattern.quote(w) + "(?![a-zA-Z])";
-            return Pattern.compile(pattern).matcher(normalized).find()
-                    || compact.contains(w);
-        }
-        return false;
+        AnalysisResult neutral = new AnalysisResult(Sentiment.NEUTRAL, 0.5,
+                "No strong moderation signals.", false, false);
+        return textVerdictResolverService.finalizeVerdict(originalText, neutral);
     }
 
     private int countObfuscatedToxicWords(String text) {
@@ -202,7 +257,7 @@ public class SentimentAnalysisService {
                 .flatMap(content -> java.util.Arrays.stream(content.split("[|,]")))
                 .map(String::trim)
                 .map(String::toLowerCase)
-                .filter(token -> token.length() >= 4 && token.length() <= 64)
+                .filter(token -> token.length() >= 2 && token.length() <= 96)
                 .collect(Collectors.toUnmodifiableSet());
         learnedNegativeCache.set(tokens);
         learnedCacheLoadedAt = now;

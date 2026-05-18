@@ -1,12 +1,6 @@
-# Sensitive Subjects Filter File
-# One phrase per line
-# Lines starting with # are comments
-# Subjects often used in slurs but are neutral on their own
+# Contextual family phrases — only flagged when NOT benign (see ContextualTextModeration).
+# Full insults remain in phrases-toxic.txt / toxic-words.txt.
 
-# Bulgarian phrases (Latin transliteration)
-maika ti
+# Used for review when combined with hostile words, not instant block alone
 bashta ti
-
-# Bulgarian phrases (Cyrillic)
-майка ти
 баща ти

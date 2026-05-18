@@ -8,7 +8,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Single source of truth for comment moderation status decisions.
+ * Decisive product logic: comments are APPROVED or REJECTED — not left in PENDING
+ * unless operators explicitly need a queue (disabled for end-user flow).
  */
 @Service
 public class ModerationDecisionService {
@@ -17,34 +18,36 @@ public class ModerationDecisionService {
     private AppModerationProperties appProperties;
 
     public ModerationDecision decide(SentimentAnalysisService.AnalysisResult analysis, AiSettings settings) {
-        double threshold = resolveThreshold(settings);
         double autoRejectThreshold = appProperties.getModeration().getAutoRejectThreshold();
         boolean autoRejectEnabled = appProperties.getModeration().isAutoRejectHighConfidence();
 
         Sentiment sentiment = analysis.getSentiment();
         double confidence = analysis.getConfidence() != null ? analysis.getConfidence() : 0.5;
-        boolean blocked = sentiment == Sentiment.NEGATIVE
-                || analysis.isSensitiveOnly()
-                || analysis.isGibberish();
 
         CommentStatus status;
-        if (blocked && autoRejectEnabled && confidence >= autoRejectThreshold) {
+        String reason = analysis.getReason();
+
+        if (analysis.isGibberish() || sentiment == Sentiment.NEGATIVE) {
             status = CommentStatus.REJECTED;
-        } else if (blocked || confidence < threshold) {
-            status = CommentStatus.PENDING;
-        } else if (sentiment == Sentiment.POSITIVE
-                && appProperties.getModeration().isAutoApprovePositive()
-                && confidence >= threshold) {
+            if (autoRejectEnabled && confidence < autoRejectThreshold) {
+                reason = (reason != null ? reason : "") + " (auto-reject policy)";
+            }
+        } else if (sentiment == Sentiment.POSITIVE) {
             status = CommentStatus.APPROVED;
         } else {
-            // Safe-by-default: NEUTRAL or weak signals require review
-            status = CommentStatus.PENDING;
+            status = CommentStatus.APPROVED;
+            reason = (reason != null ? reason : "") + " Resolved as acceptable.";
         }
 
-        boolean wouldBeAutoApproved = status == CommentStatus.APPROVED;
-        return new ModerationDecision(status, wouldBeAutoApproved, analysis.getReason(), sentiment, confidence);
+        return new ModerationDecision(
+                status,
+                status == CommentStatus.APPROVED,
+                reason,
+                sentiment,
+                confidence);
     }
 
+    @SuppressWarnings("unused")
     private double resolveThreshold(AiSettings settings) {
         if (settings != null && settings.getThreshold() != null) {
             return settings.getThreshold();

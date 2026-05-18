@@ -5,6 +5,9 @@ import com.example.aimoderation.exception.ResourceNotFoundException;
 import com.example.aimoderation.model.Role;
 import com.example.aimoderation.model.User;
 import com.example.aimoderation.model.AiSettings;
+import com.example.aimoderation.service.CommentService;
+import com.example.aimoderation.service.HuggingFaceIntegrationService;
+import com.example.aimoderation.service.ImageModerationService;
 import com.example.aimoderation.repository.UserRepository;
 import com.example.aimoderation.repository.CommentRepository;
 import com.example.aimoderation.repository.AiSettingsRepository;
@@ -31,11 +34,44 @@ public class AdminController {
     @Autowired
     CommentRepository commentRepository;
 
+    @Autowired
+    CommentService commentService;
+
+    @Autowired
+    ImageModerationService imageModerationService;
+
+    @Autowired
+    HuggingFaceIntegrationService huggingFaceIntegrationService;
+
+    @GetMapping("/integrations/huggingface")
+    public ResponseEntity<Map<String, Object>> getHuggingFaceStatus() {
+        return ResponseEntity.ok(huggingFaceIntegrationService.getStatus());
+    }
+
+    @DeleteMapping("/image-moderation")
+    public ResponseEntity<Map<String, Object>> clearImageModerationHistory() {
+        long removed = imageModerationService.clearAllResults();
+        return ResponseEntity.ok(Map.of(
+                "message", "Image moderation history cleared.",
+                "removed", removed));
+    }
+
     @GetMapping("/comments")
     public ResponseEntity<List<CommentResponse>> getAllComments() {
         return ResponseEntity.ok(commentRepository.findAll().stream()
                 .map(CommentResponse::from)
                 .collect(Collectors.toList()));
+    }
+
+    @GetMapping("/comments/approved")
+    public ResponseEntity<List<CommentResponse>> getApprovedComments() {
+        return ResponseEntity.ok(commentService.getApprovedCommentsForAdmin());
+    }
+
+    @DeleteMapping("/comments/{id}")
+    public ResponseEntity<Map<String, String>> deleteComment(@PathVariable Long id) {
+        commentService.deleteComment(id);
+        return ResponseEntity.ok(Map.of("message", "Comment removed from public feed."));
     }
 
     @GetMapping("/users")

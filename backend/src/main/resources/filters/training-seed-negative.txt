@@ -1,0 +1,12 @@
+# Seeded into moderation_training_data on first startup (pipe-separated groups per row optional)
+kys|kms|kill yourself|go kill yourself
+unalive|sewerslide|commit suicide|hang yourself
+майка ти да еба|да ти еба майката|еби си майката
+самоубий се|гърни се|мръвай|ще те убия
+da ti eba maikata|samooubi se|garni se|shte te ubiya
+prati gol|prati goli|send nudes
+kurvo|ebashti|kopele|pederas
+tap si|tup si|glupak si|mrazq te
+ненавиждам те|мразя те|ти си боклук
+nenavidqm te|mrazq te|ti si bokluk
+fgt|stfu|gtfo|kysf

@@ -1,0 +1,41 @@
+# Short toxic slang & abbreviations (2–4 chars) — checked with compact matching
+# Self-harm / threats
+kys
+kms
+kysf
+kyss
+stfu
+gtfo
+stfu
+die
+# English obfuscated
+k.y.s
+k-y-s
+k_y_s
+kms
+k.m.s
+# Bulgarian transliteration slang
+marvai
+marvai si
+garni se
+garnise
+samooubi
+samooubise
+ubise se
+ubise
+# Bulgarian short Cyrillic
+мръв
+мръвай
+гърни
+убий се
+самоуби
+# Harassment shorthand
+fgt
+fgt
+rekt
+noob
+# Scam / spam triggers
+free money
+click here
+winner
+congratulations you won

@@ -1,0 +1,51 @@
+# Multi-word toxic phrases — English & Bulgarian (Cyrillic + Latin)
+# Self-harm / suicide
+kill yourself
+go kill yourself
+go die
+hope you die
+i hope you die
+end yourself
+unalive yourself
+commit suicide
+hang yourself
+drink bleach
+# Harassment
+you are worthless
+nobody likes you
+go back to
+# Threats
+i will kill you
+im going to kill you
+gonna kill you
+# Bulgarian Cyrillic — profanity & threats
+майка ти да еба
+да ти еба майката
+еби си майката
+мръвай бе
+гърни се бе
+самоубий се
+ще те убия
+ще те пребия
+прати ми снимки
+# Bulgarian Latin transliteration
+da ti eba maikata
+ebi si maikata
+mravai be
+garni se be
+samooubi se
+shte te ubiya
+shte te prebiya
+prati mi snimki
+kurvo
+ebashti
+# Sexual harassment
+send nudes
+show nudes
+prati gol
+prati goli
+# Hate / extremism hooks
+heil hitler
+sieg heil
+white power
+1488

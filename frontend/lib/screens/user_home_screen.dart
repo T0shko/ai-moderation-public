@@ -1,8 +1,14 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/moderation_debug.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/moderation_banner.dart';
 
 class UserHomeScreen extends StatefulWidget {
   const UserHomeScreen({super.key});
@@ -13,62 +19,201 @@ class UserHomeScreen extends StatefulWidget {
 
 class _UserHomeScreenState extends State<UserHomeScreen> {
   final _commentController = TextEditingController();
+  final _scrollController = ScrollController();
+  final _imagePicker = ImagePicker();
+
   bool _isLoading = false;
   bool _isPosting = false;
   List<dynamic> _comments = [];
   String? _error;
+  String? _currentUsername;
+
+  Uint8List? _pendingImageBytes;
+  String? _pendingImageName;
+  String? _pendingContentType;
+  Map<String, dynamic>? _imageScanResult;
+  bool _isScanningImage = false;
 
   @override
   void initState() {
     super.initState();
+    _loadUsername();
     _loadComments();
   }
 
   @override
   void dispose() {
     _commentController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  void _loadComments() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
+  Future<void> _loadUsername() async {
+    final api = Provider.of<ApiService>(context, listen: false);
+    final name = await api.getUsername();
+    if (mounted) setState(() => _currentUsername = name);
+  }
+
+  void _scrollToBottom({bool animated = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if (animated) {
+        _scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        _scrollController.jumpTo(target);
+      }
     });
+  }
+
+  Future<void> _loadComments({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
     try {
       final api = Provider.of<ApiService>(context, listen: false);
       final comments = await api.getComments();
-      if (mounted) setState(() => _comments = comments);
+      if (mounted) {
+        setState(() => _comments = comments);
+        _scrollToBottom(animated: false);
+      }
     } on AuthException {
       return;
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && !silent) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final file = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        imageQuality: 88,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _pendingImageBytes = bytes;
+        _pendingImageName = file.name;
+        _pendingContentType = _mimeFromName(file.name);
+        _imageScanResult = null;
+        _isScanningImage = false;
+      });
+      await _scanPendingImage();
+    } catch (_) {
+      _snack('Could not load image', isError: true);
+    }
+  }
+
+  void _clearPendingImage() {
+    setState(() {
+      _pendingImageBytes = null;
+      _pendingImageName = null;
+      _pendingContentType = null;
+      _imageScanResult = null;
+    });
+  }
+
+  String _uniqueScanFilename(String name) {
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final dot = name.lastIndexOf('.');
+    if (dot > 0) {
+      return '${name.substring(0, dot)}_$stamp${name.substring(dot)}';
+    }
+    return '${name}_$stamp.jpg';
+  }
+
+  String _mimeFromName(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  Future<bool> _scanPendingImage() async {
+    if (_pendingImageBytes == null) return true;
+    setState(() => _isScanningImage = true);
+    try {
+      final api = Provider.of<ApiService>(context, listen: false);
+      final scan = await api.analyzeVisionImage(
+        _pendingImageBytes!,
+        _uniqueScanFilename(_pendingImageName ?? 'upload.jpg'),
+        _pendingContentType,
+      );
+      if (!mounted) return false;
+      logVisionScan('image-scan', scan);
+      final status = scan['status']?.toString() ?? '';
+      setState(() => _imageScanResult = Map<String, dynamic>.from(scan));
+      if (status == 'SAFE') {
+        return true;
+      }
+      final msg = scan['message']?.toString() ??
+          'This photo is not allowed.';
+      _snack(msg, isError: true);
+      return false;
+    } catch (e) {
+      if (mounted) {
+        final msg = e is ApiException ? e.message : 'Image scan failed';
+        _snack(msg, isError: true);
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _isScanningImage = false);
     }
   }
 
   void _postComment() async {
-    if (_commentController.text.trim().isEmpty) return;
+    final text = _commentController.text.trim();
+    if (text.isEmpty && _pendingImageBytes == null) return;
+
     setState(() => _isPosting = true);
     try {
+      if (_pendingImageBytes != null) {
+        final ok = await _scanPendingImage();
+        if (!ok || !mounted) return;
+      }
+
+      if (!mounted) return;
       final api = Provider.of<ApiService>(context, listen: false);
-      final result = await api.postComment(_commentController.text);
+      final result = await api.postComment(
+        text,
+        imageBytes: _pendingImageBytes,
+        filename: _uniqueScanFilename(_pendingImageName ?? 'upload.jpg'),
+        contentType: _pendingContentType,
+      );
+
       _commentController.clear();
+      _clearPendingImage();
+
       if (mounted) {
         final status = result['status']?.toString() ?? 'PENDING';
         final message = status == 'APPROVED'
-            ? 'Comment published'
+            ? 'Posted!'
             : status == 'REJECTED'
-                ? 'Comment blocked by moderation'
-                : 'Comment submitted for review';
-        _snack(message);
-        _loadComments();
+                ? 'Not published — broke our rules'
+                : 'Submitted';
+        _snack(message, isError: status == 'REJECTED');
+        await _loadComments(silent: true);
+        _scrollToBottom();
       }
     } on AuthException {
       return;
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.message, isError: true);
     } catch (_) {
-      if (mounted) _snack('Failed to post', isError: true);
+      if (mounted) _snack('Failed to send', isError: true);
     } finally {
       if (mounted) setState(() => _isPosting = false);
     }
@@ -109,7 +254,9 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
                 child: _isLoading
                     ? const Center(
                         child: CircularProgressIndicator(
-                            color: AppTheme.ink, strokeWidth: 1.8),
+                          color: AppTheme.ink,
+                          strokeWidth: 1.8,
+                        ),
                       )
                     : _error != null
                         ? _errorState()
@@ -129,69 +276,143 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
     return Container(
       decoration: const BoxDecoration(
         color: AppTheme.paperLight,
-        border: Border(
-          bottom: BorderSide(color: AppTheme.ink, width: 2),
-        ),
+        border: Border(bottom: BorderSide(color: AppTheme.ink, width: 2)),
       ),
       padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Text('THE PRESSROOM \u2014 PUBLIC FEED',
-                  style: AppTheme.label(color: AppTheme.textTertiary)),
-              const Spacer(),
-              Text('${_comments.length} ENTRIES',
-                  style: AppTheme.label(color: AppTheme.persimmon)),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Community',
+                    style: AppTheme.label(color: AppTheme.textTertiary)),
+                const SizedBox(height: 4),
+                Text('Chat',
+                    style: AppTheme.display(
+                      size: 28,
+                      weight: FontWeight.w700,
+                      letterSpacing: -1,
+                    )),
+              ],
+            ),
           ),
-          const SizedBox(height: 6),
+          AppIconButton(
+            icon: Icons.auto_awesome,
+            onPressed: () => Navigator.pushNamed(context, '/chat'),
+            tooltip: 'AI assistant',
+          ),
+          const SizedBox(width: 8),
+          AppIconButton(
+            icon: Icons.refresh,
+            onPressed: _loadComments,
+            tooltip: 'Refresh',
+          ),
+          const SizedBox(width: 8),
+          AppIconButton(
+            icon: Icons.logout,
+            onPressed: _logout,
+            color: AppTheme.rust,
+            tooltip: 'Sign out',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _composer() {
+    final scanStatus = _imageScanResult?['status']?.toString();
+    final scanning = _isScanningImage || (_isPosting && _pendingImageBytes != null);
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppTheme.paperLight,
+        border: Border(top: BorderSide(color: AppTheme.hairline, width: 1)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 12,
+            offset: Offset(0, -2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_pendingImageBytes != null) _pendingImagePreview(),
+          if (_isScanningImage) const ModerationScanningBanner(),
+          if (!_isScanningImage &&
+              _imageScanResult != null &&
+              scanStatus != null)
+            ModerationBanner.fromScan(_imageScanResult!, compact: true),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
+              IconButton(
+                onPressed: scanning ? null : _pickImage,
+                icon: const Icon(Icons.image_outlined, color: AppTheme.ink),
+                tooltip: 'Attach image',
+              ),
               Expanded(
-                child: RichText(
-                  text: TextSpan(
-                    style: AppTheme.display(
-                      size: 32,
-                      weight: FontWeight.w700,
-                      letterSpacing: -1.2,
+                child: TextField(
+                  controller: _commentController,
+                  maxLines: 4,
+                  minLines: 1,
+                  style: AppTheme.body(size: 15, color: AppTheme.ink),
+                  decoration: InputDecoration(
+                    hintText: 'Type a message…',
+                    hintStyle: AppTheme.body(
+                      size: 15,
+                      color: AppTheme.textTertiary,
                     ),
-                    children: [
-                      const TextSpan(text: 'Today\u2019s '),
-                      TextSpan(
-                        text: 'Dispatches',
-                        style: AppTheme.display(
-                          size: 32,
-                          weight: FontWeight.w400,
-                          style: FontStyle.italic,
-                          letterSpacing: -1.2,
-                          color: AppTheme.persimmon,
-                        ),
-                      ),
-                    ],
+                    filled: true,
+                    fillColor: AppTheme.paper,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: AppTheme.hairline),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: AppTheme.hairline),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: AppTheme.ink, width: 1.5),
+                    ),
                   ),
+                  onSubmitted: (_) => _postComment(),
                 ),
               ),
-              const SizedBox(width: 10),
-              AppIconButton(
-                icon: Icons.auto_awesome,
-                onPressed: () => Navigator.pushNamed(context, '/chat'),
-                tooltip: 'AI Concierge',
-              ),
               const SizedBox(width: 8),
-              AppIconButton(
-                icon: Icons.refresh,
-                onPressed: _loadComments,
-                tooltip: 'Reload',
-              ),
-              const SizedBox(width: 8),
-              AppIconButton(
-                icon: Icons.logout,
-                onPressed: _logout,
-                color: AppTheme.rust,
-                tooltip: 'Sign out',
+              Material(
+                color: AppTheme.ink,
+                borderRadius: BorderRadius.circular(24),
+                child: InkWell(
+                  onTap: scanning ? null : _postComment,
+                  borderRadius: BorderRadius.circular(24),
+                  child: SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: scanning
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppTheme.paperLight,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.send_rounded,
+                            color: AppTheme.paperLight,
+                            size: 22,
+                          ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -200,49 +421,31 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
     );
   }
 
-  Widget _composer() {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppTheme.paperLight,
-        border: Border(top: BorderSide(color: AppTheme.ink, width: 1.5)),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _pendingImagePreview() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(width: 12, height: 1, color: AppTheme.persimmon),
-              const SizedBox(width: 8),
-              Text('FILE A NEW DISPATCH',
-                  style: AppTheme.label(color: AppTheme.ink, size: 10)),
-            ],
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.memory(
+              _pendingImageBytes!,
+              width: 56,
+              height: 56,
+              fit: BoxFit.cover,
+            ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: AppTextField(
-                  controller: _commentController,
-                  label: 'Your dispatch',
-                  hint: 'Write your thought, dear reader…',
-                  maxLines: 3,
-                  onSubmitted: (_) => _postComment(),
-                ),
-              ),
-              const SizedBox(width: 16),
-              SizedBox(
-                width: 140,
-                child: ActionButton(
-                  text: 'File',
-                  icon: Icons.send_outlined,
-                  isLoading: _isPosting,
-                  onPressed: _postComment,
-                  height: 46,
-                ),
-              ),
-            ],
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _pendingImageName ?? 'Image',
+              style: AppTheme.body(size: 13, color: AppTheme.textSecondary),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+            onPressed: _clearPendingImage,
+            icon: const Icon(Icons.close, size: 20, color: AppTheme.textTertiary),
           ),
         ],
       ),
@@ -256,25 +459,16 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CrosshairMark(size: 24, color: AppTheme.rust),
+            const Icon(Icons.cloud_off, size: 40, color: AppTheme.rust),
             const SizedBox(height: 12),
-            Text('TRANSMISSION LOST',
-                style: AppTheme.label(color: AppTheme.rust, size: 11)),
-            const SizedBox(height: 6),
-            Text('The wire is down. We could not reach the desk.',
-                style: AppTheme.body(
-                    size: 14,
-                    color: AppTheme.textSecondary,
-                    style: FontStyle.italic)),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: 180,
-              child: ActionButton(
-                text: 'Retry',
-                icon: Icons.refresh,
-                onPressed: _loadComments,
-                height: 44,
-              ),
+            Text('Could not load messages',
+                style: AppTheme.body(size: 15, color: AppTheme.textSecondary)),
+            const SizedBox(height: 16),
+            ActionButton(
+              text: 'Retry',
+              icon: Icons.refresh,
+              onPressed: _loadComments,
+              height: 44,
             ),
           ],
         ),
@@ -287,185 +481,172 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              border: Border.all(color: AppTheme.ink, width: 1.5),
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: const Icon(Icons.edit_note,
-                size: 40, color: AppTheme.ink),
-          ),
-          const SizedBox(height: 14),
-          Text('THE PAGE IS BLANK',
-              style: AppTheme.label(color: AppTheme.textSecondary, size: 11)),
-          const SizedBox(height: 6),
-          Text('Be the first to file a dispatch.',
+          Icon(Icons.forum_outlined, size: 56, color: AppTheme.textTertiary.withValues(alpha: 0.5)),
+          const SizedBox(height: 12),
+          Text('No messages yet',
+              style: AppTheme.body(size: 16, color: AppTheme.textSecondary)),
+          const SizedBox(height: 4),
+          Text('Say hello or share a photo',
               style: AppTheme.body(
-                  size: 14,
-                  color: AppTheme.textTertiary,
-                  style: FontStyle.italic)),
+                size: 14,
+                color: AppTheme.textTertiary,
+                style: FontStyle.italic,
+              )),
         ],
       ),
     );
   }
 
   Widget _commentsList() {
-    return RefreshIndicator(
-      onRefresh: () async => _loadComments(),
-      color: AppTheme.ink,
-      backgroundColor: AppTheme.paperLight,
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-        itemCount: _comments.length,
-        separatorBuilder: (_, _) => _ledgerSeparator(),
-        itemBuilder: (context, index) =>
-            _entry(_comments[index], index + 1),
-      ),
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      itemCount: _comments.length,
+      itemBuilder: (context, index) => _messageBubble(_comments[index]),
     );
   }
 
-  Widget _ledgerSeparator() {
+  Widget _messageBubble(dynamic comment) {
+    final author = comment['author']?['username']?.toString() ?? 'Reader';
+    final isMe = _currentUsername != null && author == _currentUsername;
+    final content = comment['content']?.toString() ?? '';
+    final imageUrl = comment['imageUrl']?.toString();
+    final imageBytes = _decodeDataUrl(imageUrl);
+    final createdAt = comment['createdAt']?.toString() ?? '';
+    final timeLabel = _formatTime(createdAt);
+    final initial = author.isNotEmpty ? author[0].toUpperCase() : '?';
+
+    final bubbleColor = isMe ? AppTheme.ink : AppTheme.paperLight;
+    final textColor = isMe ? AppTheme.paperLight : AppTheme.ink;
+    final align = isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+    final rowAlign = isMe ? MainAxisAlignment.end : MainAxisAlignment.start;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: align,
         children: [
-          Expanded(child: Container(height: 1, color: AppTheme.hairline)),
-          const SizedBox(width: 10),
-          Text('\u00B7 \u00B7 \u00B7',
-              style: AppTheme.mono(size: 9, color: AppTheme.textTertiary)),
-          const SizedBox(width: 10),
-          Expanded(child: Container(height: 1, color: AppTheme.hairline)),
-        ],
-      ),
-    );
-  }
-
-  Widget _entry(dynamic comment, int index) {
-    final sentiment = comment['sentiment'] ?? 'NEUTRAL';
-    final confidence = (comment['confidenceScore'] ?? 0.0) * 100;
-    final status = comment['status'] ?? 'PENDING';
-    final sentColor = _sentimentColor(sentiment);
-    final statusColor = _statusColor(status);
-    final author = comment['author']?['username'] ?? 'Anonymous';
-    final initial = author.toString().substring(0, 1).toUpperCase();
-
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Square serif drop-cap avatar.
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: AppTheme.paperLight,
-              border: Border.all(color: AppTheme.ink, width: 1.2),
-            ),
-            child: Stack(
-              children: [
-                Center(
-                  child: Text(
-                    initial,
-                    style: AppTheme.display(
-                      size: 30,
-                      weight: FontWeight.w700,
-                      color: AppTheme.ink,
-                      letterSpacing: -1,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 2,
-                  bottom: 2,
-                  child: Container(width: 6, height: 6, color: sentColor),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      author,
+          if (!isMe)
+            Padding(
+              padding: const EdgeInsets.only(left: 44, bottom: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(author,
                       style: AppTheme.body(
-                        size: 15,
-                        color: AppTheme.ink,
+                        size: 11,
                         weight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '\u2014 ${sentiment.toString().toLowerCase()}',
+                        color: AppTheme.textSecondary,
+                      )),
+                  if (timeLabel.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Text(timeLabel,
+                        style: AppTheme.mono(
+                          size: 10,
+                          color: AppTheme.textTertiary,
+                        )),
+                  ],
+                ],
+              ),
+            ),
+          Row(
+            mainAxisAlignment: rowAlign,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (!isMe) ...[
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: AppTheme.persimmonSoft,
+                  child: Text(initial,
                       style: AppTheme.body(
-                        size: 13,
-                        color: sentColor,
-                        style: FontStyle.italic,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      'N\u00B0 ${index.toString().padLeft(3, '0')}',
-                      style: AppTheme.mono(
-                        size: 10,
-                        color: AppTheme.textTertiary,
-                      ),
-                    ),
-                  ],
+                        size: 12,
+                        weight: FontWeight.w700,
+                        color: AppTheme.ink,
+                      )),
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    StatusBadge(
-                      text: status,
-                      color: statusColor,
-                      showPulse: status == 'PENDING',
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: bubbleColor,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: Radius.circular(isMe ? 18 : 4),
+                      bottomRight: Radius.circular(isMe ? 4 : 18),
                     ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'CONF ${confidence.toStringAsFixed(0)}%',
-                      style: AppTheme.label(color: AppTheme.textTertiary),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  comment['content'] ?? '',
-                  style: AppTheme.body(
-                    size: 15,
-                    color: AppTheme.ink,
-                    height: 1.55,
+                    border: isMe
+                        ? null
+                        : Border.all(color: AppTheme.hairline, width: 1),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (imageBytes != null) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.memory(
+                            imageBytes,
+                            width: 240,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        if (content.isNotEmpty) const SizedBox(height: 8),
+                      ],
+                      if (content.isNotEmpty)
+                        Text(
+                          content,
+                          style: AppTheme.body(
+                            size: 15,
+                            color: textColor,
+                            height: 1.45,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+              if (isMe) const SizedBox(width: 4),
+            ],
           ),
+          if (isMe && timeLabel.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, right: 8),
+              child: Text(timeLabel,
+                  style: AppTheme.mono(
+                    size: 10,
+                    color: AppTheme.textTertiary,
+                  )),
+            ),
         ],
       ),
     );
   }
 
-  Color _sentimentColor(String s) {
-    if (s == 'NEGATIVE') return AppTheme.rust;
-    if (s == 'POSITIVE') return AppTheme.olive;
-    return AppTheme.azure;
+  Uint8List? _decodeDataUrl(String? dataUrl) {
+    if (dataUrl == null || dataUrl.isEmpty) return null;
+    final comma = dataUrl.indexOf(',');
+    if (comma < 0) return null;
+    try {
+      return base64Decode(dataUrl.substring(comma + 1));
+    } catch (_) {
+      return null;
+    }
   }
 
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'APPROVED':
-        return AppTheme.olive;
-      case 'REJECTED':
-        return AppTheme.rust;
-      case 'PENDING':
-        return AppTheme.honey;
-      default:
-        return AppTheme.textTertiary;
+  String _formatTime(String iso) {
+    if (iso.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(iso);
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return iso.length >= 16 ? iso.substring(11, 16) : '';
     }
   }
 }

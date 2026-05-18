@@ -29,8 +29,30 @@ public class CommentController {
     @PreAuthorize("hasRole('USER') or hasRole('MODERATOR') or hasRole('ADMIN')")
     public ResponseEntity<CommentResponse> postComment(@RequestBody CommentRequest request) {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        CommentResponse comment = commentService.createComment(request.getContent(), username);
+        byte[] imageBytes = decodeOptionalImage(request.getImageBase64());
+        CommentResponse comment = commentService.createComment(
+                request.getContent(),
+                username,
+                imageBytes,
+                request.getFilename(),
+                request.getContentType());
         return ResponseEntity.ok(comment);
+    }
+
+    private byte[] decodeOptionalImage(String imageBase64) {
+        if (imageBase64 == null || imageBase64.isBlank()) {
+            return null;
+        }
+        String raw = imageBase64.trim();
+        int comma = raw.indexOf(',');
+        if (raw.startsWith("data:") && comma > 0) {
+            raw = raw.substring(comma + 1);
+        }
+        try {
+            return java.util.Base64.getDecoder().decode(raw);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid image data.");
+        }
     }
 
     @GetMapping("/pending")
@@ -79,6 +101,9 @@ public class CommentController {
 
     public static class CommentRequest {
         private String content;
+        private String imageBase64;
+        private String filename;
+        private String contentType;
 
         public String getContent() {
             return content;
@@ -86,6 +111,30 @@ public class CommentController {
 
         public void setContent(String content) {
             this.content = content;
+        }
+
+        public String getImageBase64() {
+            return imageBase64;
+        }
+
+        public void setImageBase64(String imageBase64) {
+            this.imageBase64 = imageBase64;
+        }
+
+        public String getFilename() {
+            return filename;
+        }
+
+        public void setFilename(String filename) {
+            this.filename = filename;
+        }
+
+        public String getContentType() {
+            return contentType;
+        }
+
+        public void setContentType(String contentType) {
+            this.contentType = contentType;
         }
     }
 }

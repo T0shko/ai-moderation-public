@@ -37,6 +37,7 @@ logs/
 # JAVA / MAVEN
 # ─────────────────────────────────────────────────────────────
 backend/target/
+backend/models/clip/*.onnx
 backend/.gitignore
 backend/src/test/
 *.class

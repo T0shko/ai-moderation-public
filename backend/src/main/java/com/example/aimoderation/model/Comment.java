@@ -15,6 +15,10 @@ public class Comment {
     @Column(columnDefinition = "TEXT")
     private String content;
 
+    /** Data URL or path for an attached image (optional). */
+    @Column(name = "image_url", columnDefinition = "TEXT")
+    private String imageUrl;
+
     @ManyToOne
     @JoinColumn(name = "user_id")
     private User author;
@@ -50,6 +54,14 @@ public class Comment {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 
     public User getAuthor() {

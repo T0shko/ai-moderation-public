@@ -19,9 +19,27 @@ die
 мразя
 убий
 умри
+мразиш
+ненавиждам
+провал
+гаден
+отвратителен
+провалник
+лъжлив
+измамник
 
 # Bulgarian negative words (Latin transliteration)
 tap
 tup
 glupav
 mrazq
+mrazish
+nenavidqm
+proval
+gaden
+otvratitelen
+provalnik
+lajliv
+izmamnik
+smetka
+dalavera

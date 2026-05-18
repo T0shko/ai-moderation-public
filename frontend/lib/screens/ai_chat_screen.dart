@@ -68,10 +68,10 @@ class _AiChatScreenState extends State<AiChatScreen>
   }
 
   void _scrollToEnd() {
-    Future.delayed(const Duration(milliseconds: 100), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          0,
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
         );
@@ -393,55 +393,104 @@ class _AiChatScreenState extends State<AiChatScreen>
   Widget _messageList() {
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       itemCount: _messages.length,
-      itemBuilder: (context, i) => _messageBlock(_messages[i]),
+      itemBuilder: (context, i) {
+        final msg = _messages[_messages.length - 1 - i];
+        return _messageBlock(msg);
+      },
     );
   }
 
   Widget _messageBlock(_ChatMessage msg) {
     final isUser = msg.role == 'user';
     final isError = msg.role == 'error';
-    final color = isUser
-        ? AppTheme.ink
-        : isError
-            ? AppTheme.rust
-            : AppTheme.persimmon;
-    final speaker = isUser
-        ? 'YOU'
-        : isError
-            ? 'WIRE ERROR'
-            : 'CONCIERGE';
     final t = msg.time;
     final timeStr =
         '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
+    final align = isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+    final rowAlign = isUser ? MainAxisAlignment.end : MainAxisAlignment.start;
+    final bubbleColor = isError
+        ? AppTheme.rust.withValues(alpha: 0.12)
+        : isUser
+            ? AppTheme.ink
+            : AppTheme.paperLight;
+    final textColor = isError
+        ? AppTheme.rust
+        : isUser
+            ? AppTheme.paperLight
+            : AppTheme.ink;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 22),
+      padding: const EdgeInsets.only(bottom: 10),
       child: GestureDetector(
         onLongPress: () => _copyMessage(msg.content),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: align,
           children: [
             Row(
+              mainAxisAlignment: rowAlign,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Container(width: 14, height: 1, color: color),
-                const SizedBox(width: 8),
-                Text(speaker,
-                    style: AppTheme.label(color: color, size: 10)),
-                const Spacer(),
-                Text(timeStr,
-                    style: AppTheme.mono(
-                        size: 10, color: AppTheme.textTertiary)),
+                if (!isUser) ...[
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppTheme.persimmonSoft,
+                      border: Border.all(color: AppTheme.persimmon, width: 1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(Icons.auto_awesome,
+                        size: 16, color: AppTheme.persimmon),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 340),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 11,
+                    ),
+                    decoration: BoxDecoration(
+                      color: bubbleColor,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(18),
+                        topRight: const Radius.circular(18),
+                        bottomLeft: Radius.circular(isUser ? 18 : 4),
+                        bottomRight: Radius.circular(isUser ? 4 : 18),
+                      ),
+                      border: isUser || isError
+                          ? null
+                          : Border.all(color: AppTheme.hairline),
+                    ),
+                    child: Text(
+                      msg.content,
+                      style: AppTheme.body(
+                        size: 15,
+                        color: textColor,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              msg.content,
-              style: AppTheme.body(
-                size: 16,
-                color: isError ? AppTheme.rust : AppTheme.ink,
-                height: 1.6,
+            Padding(
+              padding: EdgeInsets.only(
+                top: 4,
+                left: isUser ? 0 : 40,
+                right: isUser ? 8 : 0,
+              ),
+              child: Text(
+                isError ? 'Error · $timeStr' : timeStr,
+                style: AppTheme.mono(
+                  size: 10,
+                  color: AppTheme.textTertiary,
+                ),
               ),
             ),
           ],
@@ -474,30 +523,70 @@ class _AiChatScreenState extends State<AiChatScreen>
     return Container(
       decoration: const BoxDecoration(
         color: AppTheme.paperLight,
-        border: Border(top: BorderSide(color: AppTheme.ink, width: 1.5)),
+        border: Border(top: BorderSide(color: AppTheme.hairline, width: 1)),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
-            child: AppTextField(
+            child: TextField(
               controller: _messageController,
-              label: 'Your message',
-              hint: 'Ask anything…',
               maxLines: 4,
+              minLines: 1,
+              style: AppTheme.body(size: 15, color: AppTheme.ink),
+              decoration: InputDecoration(
+                hintText: 'Ask the concierge…',
+                hintStyle: AppTheme.body(
+                  size: 15,
+                  color: AppTheme.textTertiary,
+                ),
+                filled: true,
+                fillColor: AppTheme.paper,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: AppTheme.hairline),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: AppTheme.hairline),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: AppTheme.ink, width: 1.5),
+                ),
+              ),
               onSubmitted: (_) => _sendMessage(),
             ),
           ),
-          const SizedBox(width: 14),
-          SizedBox(
-            width: 130,
-            child: ActionButton(
-              text: 'Send',
-              icon: Icons.send_outlined,
-              onPressed: _isSending ? null : _sendMessage,
-              isLoading: _isSending,
-              height: 44,
+          const SizedBox(width: 8),
+          Material(
+            color: AppTheme.persimmon,
+            borderRadius: BorderRadius.circular(24),
+            child: InkWell(
+              onTap: _isSending ? null : _sendMessage,
+              borderRadius: BorderRadius.circular(24),
+              child: SizedBox(
+                width: 48,
+                height: 48,
+                child: _isSending
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppTheme.paperLight,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.send_rounded,
+                        color: AppTheme.paperLight,
+                        size: 22,
+                      ),
+              ),
             ),
           ),
         ],

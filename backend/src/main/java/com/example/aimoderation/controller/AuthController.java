@@ -199,7 +199,6 @@ public class AuthController {
     // ── Refresh ────────────────────────────────────────────────────
 
     @PostMapping("/refresh")
-    @Transactional
     public ResponseEntity<?> refresh(
             @Valid @RequestBody RefreshTokenRequest body,
             HttpServletRequest request) {
@@ -223,8 +222,8 @@ public class AuthController {
                     request.getRequestURI()));
         }
 
-        RefreshToken stored = issued.record();
-        User user = stored.getUser();
+        User user = userRepository.findById(issued.userId())
+                .orElseThrow(() -> new RefreshTokenService.RefreshTokenException("unknown_refresh_token"));
 
         if (!user.isEnabled()) {
             refreshTokenService.revokeAllForUser(user);

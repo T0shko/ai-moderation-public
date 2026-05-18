@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.hibernate.Hibernate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -54,14 +55,14 @@ public class RefreshTokenService {
         logger.info("RefreshTokenService configured (ttl={} days)", refreshTtlDays);
     }
 
-    public record Issued(String rawToken, RefreshToken record) {}
+    public record Issued(String rawToken, RefreshToken record, Long userId) {}
 
     /** Issues a brand-new refresh token for the given user (no rotation). */
     @Transactional
     public Issued issue(User user, String userAgent, String ip) {
         String raw = generateRawToken();
         RefreshToken record = persistToken(user, raw, userAgent, ip);
-        return new Issued(raw, record);
+        return new Issued(raw, record, user.getId());
     }
 
     /**
@@ -90,6 +91,7 @@ public class RefreshTokenService {
         }
 
         User user = existing.getUser();
+        Hibernate.initialize(user);
         String newRaw = generateRawToken();
         String newHash = sha256(newRaw);
 
@@ -99,7 +101,7 @@ public class RefreshTokenService {
         repository.save(existing);
 
         RefreshToken newRecord = persistToken(user, newRaw, userAgent, ip);
-        return new Issued(newRaw, newRecord);
+        return new Issued(newRaw, newRecord, user.getId());
     }
 
     /** Revokes a single refresh token, e.g. on /logout. Idempotent. */
