@@ -1,6 +1,9 @@
 package com.example.aimoderation.controller;
 
+import com.example.aimoderation.exception.ModerationRejectedException;
+import com.example.aimoderation.exception.ResourceNotFoundException;
 import com.example.aimoderation.payload.response.ErrorResponse;
+import com.example.aimoderation.security.services.RefreshTokenService;
 import com.example.aimoderation.payload.response.ErrorResponse.FieldError;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -8,6 +11,7 @@ import jakarta.validation.ConstraintViolationException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -103,6 +107,20 @@ public class GlobalExceptionHandler {
                 HttpStatus.FORBIDDEN.value(), req.getRequestURI()));
     }
 
+    @ExceptionHandler(RefreshTokenService.RefreshTokenException.class)
+    public ResponseEntity<ErrorResponse> handleRefreshToken(
+            RefreshTokenService.RefreshTokenException e, HttpServletRequest req) {
+        String code = e.getMessage() != null ? e.getMessage() : "refresh_failed";
+        String message = switch (code) {
+            case "unknown_refresh_token" -> "Refresh token is not recognized. Please sign in again.";
+            case "refresh_token_expired" -> "Refresh token has expired. Please sign in again.";
+            case "refresh_token_revoked" -> "Refresh token has been revoked. Please sign in again.";
+            default -> "Refresh failed. Please sign in again.";
+        };
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ErrorResponse.of(
+                code, message, HttpStatus.UNAUTHORIZED.value(), req.getRequestURI()));
+    }
+
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuth(AuthenticationException e, HttpServletRequest req) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ErrorResponse.of(
@@ -166,6 +184,34 @@ public class GlobalExceptionHandler {
                 "bad_request",
                 e.getMessage() != null ? e.getMessage() : "Bad request.",
                 HttpStatus.BAD_REQUEST.value(), req.getRequestURI()));
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFoundResource(
+            ResourceNotFoundException e, HttpServletRequest req) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse.of(
+                "not_found",
+                e.getMessage() != null ? e.getMessage() : "Resource not found.",
+                HttpStatus.NOT_FOUND.value(), req.getRequestURI()));
+    }
+
+    @ExceptionHandler(ModerationRejectedException.class)
+    public ResponseEntity<ErrorResponse> handleModerationRejected(
+            ModerationRejectedException e, HttpServletRequest req) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(ErrorResponse.of(
+                "moderation_rejected",
+                e.getMessage() != null ? e.getMessage() : "Content blocked by moderation.",
+                HttpStatus.UNPROCESSABLE_ENTITY.value(), req.getRequestURI()));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrity(
+            DataIntegrityViolationException e, HttpServletRequest req) {
+        logger.warn("Data integrity violation: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(
+                "conflict",
+                "Resource already exists or violates a constraint.",
+                HttpStatus.CONFLICT.value(), req.getRequestURI()));
     }
 
     // ── Catch-all ──────────────────────────────────────────────────

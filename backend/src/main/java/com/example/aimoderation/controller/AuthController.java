@@ -22,6 +22,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -180,7 +181,15 @@ public class AuthController {
         user.setRole(Role.USER);
         user.setEnabled(true);
 
-        userRepository.save(user);
+        try {
+            userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(
+                    "username_taken",
+                    "That username is already in use.",
+                    HttpStatus.CONFLICT.value(),
+                    request.getRequestURI()));
+        }
 
         logger.info("New user registered: {}", signUpRequest.getUsername());
 
@@ -190,7 +199,6 @@ public class AuthController {
     // ── Refresh ────────────────────────────────────────────────────
 
     @PostMapping("/refresh")
-    @Transactional
     public ResponseEntity<?> refresh(
             @Valid @RequestBody RefreshTokenRequest body,
             HttpServletRequest request) {
@@ -214,8 +222,8 @@ public class AuthController {
                     request.getRequestURI()));
         }
 
-        RefreshToken stored = issued.record();
-        User user = stored.getUser();
+        User user = userRepository.findById(issued.userId())
+                .orElseThrow(() -> new RefreshTokenService.RefreshTokenException("unknown_refresh_token"));
 
         if (!user.isEnabled()) {
             refreshTokenService.revokeAllForUser(user);

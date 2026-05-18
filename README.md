@@ -4,7 +4,7 @@ A full-stack application for AI-powered content moderation with user management 
 
 ## Architecture
 
-- **Backend**: Spring Boot (Java 17) with PostgreSQL
+- **Backend**: Spring Boot 3.4 (Java 21) with PostgreSQL
 - **Frontend**: Flutter (mobile/web)
 - **Database**: PostgreSQL with Liquibase migrations
 - **Container**: Docker & Docker Compose
@@ -12,7 +12,7 @@ A full-stack application for AI-powered content moderation with user management 
 ## Prerequisites
 
 - Docker & Docker Compose
-- Java 17
+- Java 21
 - Maven
 - Flutter (for frontend development)
 

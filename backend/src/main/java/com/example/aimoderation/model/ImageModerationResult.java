@@ -2,6 +2,8 @@ package com.example.aimoderation.model;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Entity for tracking image moderation results.
@@ -42,6 +44,14 @@ public class ImageModerationResult {
     
     @Column(name = "moderated_at")
     private LocalDateTime moderatedAt;
+
+    /** CLIP debug labels — not persisted; populated on fresh analysis only */
+    @Transient
+    private List<String> clipLabels = new ArrayList<>();
+
+    /** TriGuard per-layer summary — not persisted */
+    @Transient
+    private List<String> triGuardLayers = new ArrayList<>();
     
     public ImageModerationResult() {}
     
@@ -134,5 +144,21 @@ public class ImageModerationResult {
 
     public void setModeratedAt(LocalDateTime moderatedAt) {
         this.moderatedAt = moderatedAt;
+    }
+
+    public List<String> getClipLabels() {
+        return clipLabels;
+    }
+
+    public void setClipLabels(List<String> clipLabels) {
+        this.clipLabels = clipLabels != null ? clipLabels : new ArrayList<>();
+    }
+
+    public List<String> getTriGuardLayers() {
+        return triGuardLayers;
+    }
+
+    public void setTriGuardLayers(List<String> triGuardLayers) {
+        this.triGuardLayers = triGuardLayers != null ? triGuardLayers : new ArrayList<>();
     }
 }

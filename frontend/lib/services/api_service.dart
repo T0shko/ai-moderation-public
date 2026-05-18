@@ -107,14 +107,75 @@ class ApiService {
     return prefs.getString(_kRefreshToken);
   }
 
-  /// Returns the token, otherwise throws AuthException + redirects to login.
-  Future<String> _requireToken() async {
-    final token = await getToken();
-    if (token == null || token.isEmpty) {
-      await _forceLogout();
-      throw AuthException();
+  /// Resolves a usable access token, refreshing when missing or near expiry.
+  Future<String?> _resolveAccessToken() async {
+    var token = await getToken();
+    if (token != null &&
+        token.isNotEmpty &&
+        await isAccessTokenFresh(leewaySeconds: 45)) {
+      return token;
     }
-    return token;
+    return _refreshAccessToken();
+  }
+
+  /// Cold start: refresh if needed, validate with /auth/me, return roles.
+  Future<List<String>?> restoreSession() async {
+    final refresh = await getRefreshToken();
+    final access = await getToken();
+    if ((refresh == null || refresh.isEmpty) &&
+        (access == null || access.isEmpty)) {
+      return null;
+    }
+
+    if (!await isAccessTokenFresh(leewaySeconds: 30) ||
+        access == null ||
+        access.isEmpty) {
+      final renewed = await _refreshAccessToken();
+      if (renewed == null || renewed.isEmpty) {
+        await logout();
+        return null;
+      }
+    }
+
+    try {
+      return await _fetchRolesFromMe();
+    } on AuthException {
+      final renewed = await _refreshAccessToken();
+      if (renewed == null || renewed.isEmpty) {
+        await logout();
+        return null;
+      }
+      try {
+        return await _fetchRolesFromMe();
+      } on AuthException {
+        await logout();
+        return null;
+      }
+    } catch (_) {
+      final cached = await getRoles();
+      return cached.isEmpty ? null : cached;
+    }
+  }
+
+  Future<List<String>> _fetchRolesFromMe() async {
+    final response = await _authGet('/auth/me');
+    final profile = jsonDecode(response.body) as Map<String, dynamic>;
+    final roles = (profile['roles'] as List?)
+            ?.map((e) => e.toString())
+            .toList(growable: false) ??
+        const <String>[];
+    if (roles.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_kRoles, roles);
+      await prefs.setStringList(_kLegacyRoles, roles);
+    }
+    final username = profile['username'] as String?;
+    if (username != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kUsername, username);
+      await prefs.setString(_kLegacyUsername, username);
+    }
+    return roles;
   }
 
   /// Persists tokens returned by /signin or /refresh.
@@ -225,6 +286,10 @@ class ApiService {
       return null; // network error → fall through to logout
     }
 
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await logout();
+      return null;
+    }
     if (response.statusCode != 200) {
       return null;
     }
@@ -278,38 +343,44 @@ class ApiService {
     'Authorization': 'Bearer $token',
   };
 
-  /// Detects a /refresh-eligible 401: server signals `code: token_expired`
-  /// or surfaces it in the WWW-Authenticate header.
-  bool _isTokenExpired(http.Response response) {
-    if (response.statusCode != 401) return false;
-    final www = response.headers['www-authenticate'];
-    if (www != null && www.contains('token_expired')) return true;
-    if (response.body.isEmpty) return false;
-    try {
-      final body = jsonDecode(response.body);
-      if (body is Map && body['code'] == 'token_expired') return true;
-    } catch (_) {/* not JSON */}
-    return false;
-  }
-
-  /// Performs the request and, if the server says the access token is
-  /// expired, runs a single silent refresh and retries once.
+  /// Performs the request; refreshes once on 401 and retries.
   Future<http.Response> _authedRequest(
     Future<http.Response> Function(String token) send,
   ) async {
-    final token = await _requireToken();
+    var token = await _resolveAccessToken();
+    if (token == null || token.isEmpty) {
+      await _forceLogout();
+      throw AuthException();
+    }
+
     http.Response response = await send(token);
 
-    if (_isTokenExpired(response)) {
+    if (response.statusCode == 401) {
       final refreshed = await _refreshAccessToken();
       if (refreshed != null && refreshed.isNotEmpty) {
         response = await send(refreshed);
       }
     }
 
-    if (response.statusCode == 401 || response.statusCode == 403) {
+    if (response.statusCode == 401) {
       await _forceLogout();
       throw AuthException(_extractErrorMessage(response));
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(
+        status: 403,
+        code: 'forbidden',
+        message: _extractErrorMessage(response, fallback: 'Access denied.'),
+        body: response.body.isNotEmpty ? jsonDecode(response.body) : null,
+      );
+    }
+    if (response.statusCode >= 400) {
+      throw ApiException(
+        status: response.statusCode,
+        code: _extractErrorCode(response),
+        message: _extractErrorMessage(response, fallback: 'Request failed (${response.statusCode})'),
+        body: response.body.isNotEmpty ? jsonDecode(response.body) : null,
+      );
     }
     return response;
   }
@@ -347,14 +418,21 @@ class ApiService {
     return fallback ?? 'Request failed (${response.statusCode})';
   }
 
+  String _extractErrorCode(http.Response response) {
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['code'] is String) {
+        return body['code'] as String;
+      }
+    } catch (_) {/* non-JSON */}
+    return 'error';
+  }
+
   ApiException _toApiException(http.Response response, {String? fallback}) {
-    String code = 'request_failed';
+    String code = _extractErrorCode(response);
     dynamic body;
     try {
       body = jsonDecode(response.body);
-      if (body is Map && body['code'] is String) {
-        code = body['code'] as String;
-      }
     } catch (_) {/* non-JSON */}
     return ApiException(
       status: response.statusCode,
@@ -413,31 +491,49 @@ class ApiService {
     throw _toApiException(response, fallback: 'Registration failed');
   }
 
-  /// Validates the current session by hitting /auth/me. Returns the profile
-  /// payload on success, or throws AuthException on failure.
+  /// Validates the current session by hitting /auth/me.
   Future<Map<String, dynamic>> me() async {
     final response = await _authGet('/auth/me');
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw AuthException(_extractErrorMessage(response));
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   // ── Comments ────────────────────────────────────────────────────
 
   Future<List<dynamic>> getComments() async {
-    final response = await http.get(Uri.parse('$baseUrl/comments'));
+    final http.Response response;
+    try {
+      response = await http.get(Uri.parse('$baseUrl/comments'));
+    } catch (e) {
+      throw ApiException(
+        status: 0,
+        code: 'network_error',
+        message: 'Cannot connect to server. Is the backend running?',
+      );
+    }
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
     throw _toApiException(response, fallback: 'Failed to load comments');
   }
 
-  Future<void> postComment(String content) async {
-    final response = await _authPost('/comments', body: {'content': content});
-    if (response.statusCode != 200) {
-      throw _toApiException(response, fallback: 'Failed to post comment');
+  Future<Map<String, dynamic>> postComment(
+    String content, {
+    Uint8List? imageBytes,
+    String? filename,
+    String? contentType,
+  }) async {
+    final body = <String, dynamic>{'content': content};
+    if (imageBytes != null && imageBytes.isNotEmpty) {
+      body['imageBase64'] = base64Encode(imageBytes);
+      body['filename'] = filename ?? 'upload.jpg';
+      body['contentType'] =
+          contentType ?? _resolveImageContentType(filename ?? 'upload.jpg', null);
     }
+    final response = await _authPost('/comments', body: body);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw _toApiException(response, fallback: 'Failed to post comment');
   }
 
   Future<List<dynamic>> getPendingComments() async {
@@ -501,6 +597,22 @@ class ApiService {
     throw _toApiException(response, fallback: 'Failed to load all comments');
   }
 
+  Future<List<dynamic>> getApprovedCommentsAdmin() async {
+    final response = await _authGet('/admin/comments/approved');
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    throw _toApiException(
+        response, fallback: 'Failed to load approved comments');
+  }
+
+  Future<void> deleteCommentAdmin(int commentId) async {
+    final response = await _authDelete('/admin/comments/$commentId');
+    if (response.statusCode != 200) {
+      throw _toApiException(response, fallback: 'Failed to remove comment');
+    }
+  }
+
   // ── Vision Lab ──────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> getVisionLabInfo() async {
@@ -509,6 +621,14 @@ class ApiService {
       return jsonDecode(response.body);
     }
     throw _toApiException(response, fallback: 'Failed to load vision lab info');
+  }
+
+  Future<void> clearImageModerationHistory() async {
+    final response = await _authDelete('/admin/image-moderation');
+    if (response.statusCode != 200) {
+      throw _toApiException(
+          response, fallback: 'Failed to clear image moderation history');
+    }
   }
 
   Future<Map<String, dynamic>> analyzeVisionImage(
@@ -520,19 +640,16 @@ class ApiService {
 
     final http.Response response;
     try {
-      response = await http.post(
-        Uri.parse('$baseUrl/vision-lab'),
-        headers: const {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({
+      response = await _authPost(
+        '/vision-lab',
+        body: {
           'filename': filename,
           'contentType': resolvedContentType,
           'imageBase64': base64Encode(imageBytes),
-        }),
+        },
       );
     } catch (e) {
+      if (e is ApiException || e is AuthException) rethrow;
       throw ApiException(
         status: 0,
         code: 'network_error',
@@ -550,6 +667,7 @@ class ApiService {
         status: 413,
         code: 'payload_too_large',
         message: 'Image is too large. Maximum size is 10 MB.',
+        body: response.body.isNotEmpty ? jsonDecode(response.body) : null,
       );
     }
 

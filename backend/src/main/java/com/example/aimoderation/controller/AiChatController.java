@@ -1,5 +1,6 @@
 package com.example.aimoderation.controller;
 
+import com.example.aimoderation.config.AppModerationProperties;
 import com.example.aimoderation.security.services.UserDetailsImpl;
 import com.example.aimoderation.service.AiChatService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,9 @@ public class AiChatController {
     @Autowired
     private AiChatService aiChatService;
 
+    @Autowired
+    private AppModerationProperties appProperties;
+
     /**
      * Send a message to the AI chatbot.
      *
@@ -40,6 +44,11 @@ public class AiChatController {
 
         if (message == null || message.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Message cannot be empty"));
+        }
+        int maxLen = appProperties.getChat().getMaxMessageLength();
+        if (message.length() > maxLen) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Message exceeds maximum length of " + maxLen + " characters."));
         }
 
         AiChatService.ChatResponse response = aiChatService.chat(

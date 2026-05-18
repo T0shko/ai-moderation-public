@@ -1,8 +1,10 @@
 package com.example.aimoderation.controller;
 
+import com.example.aimoderation.service.SentimentAnalysisService;
 import com.example.aimoderation.service.WordFilterService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -14,10 +16,14 @@ import java.util.Set;
  */
 @RestController
 @RequestMapping("/api/filters")
+@PreAuthorize("hasRole('ADMIN')")
 public class WordFilterController {
 
     @Autowired
     private WordFilterService wordFilterService;
+
+    @Autowired
+    private SentimentAnalysisService sentimentAnalysisService;
 
     /**
      * Get all filter categories and their word counts.
@@ -79,9 +85,11 @@ public class WordFilterController {
      * Check if text contains any bad words.
      */
     @PostMapping("/check")
+    @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> checkText(@RequestBody Map<String, String> request) {
         String text = request.get("text");
-        
+        var analysis = sentimentAnalysisService.analyze(text);
+
         Map<String, Object> result = new HashMap<>();
         result.put("containsToxic", wordFilterService.containsToxicWord(text));
         result.put("containsNegative", wordFilterService.containsNegativeIndicator(text));
@@ -89,7 +97,9 @@ public class WordFilterController {
         result.put("toxicCount", wordFilterService.countMatches(text, wordFilterService.getToxicWords()));
         result.put("negativeCount", wordFilterService.countMatches(text, wordFilterService.getNegativeIndicators()));
         result.put("positiveCount", wordFilterService.countMatches(text, wordFilterService.getPositiveWords()));
-        
+        result.put("sentiment", analysis.getSentiment().name());
+        result.put("confidence", analysis.getConfidence());
+        result.put("reason", analysis.getReason());
         return ResponseEntity.ok(result);
     }
 }

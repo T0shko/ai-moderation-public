@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd">
+
+    <changeSet id="010-seed-moderation-training-phrases" author="system">
+        <comment>Supplement learned-negative phrases (EN slang + Bulgarian) when not already present</comment>
+        <sql>
+            INSERT INTO moderation_training_data (content, label, created_at)
+            SELECT 'kys|kms|kill yourself|go kill yourself', 'NEGATIVE', NOW()
+            WHERE NOT EXISTS (
+                SELECT 1 FROM moderation_training_data WHERE content LIKE '%kys%'
+            );
+        </sql>
+        <sql>
+            INSERT INTO moderation_training_data (content, label, created_at)
+            SELECT 'самоубий се|гърни се|ще те убия|майка ти да еба', 'NEGATIVE', NOW()
+            WHERE NOT EXISTS (
+                SELECT 1 FROM moderation_training_data WHERE content LIKE '%самоубий%'
+            );
+        </sql>
+        <sql>
+            INSERT INTO moderation_training_data (content, label, created_at)
+            SELECT 'samooubi se|garni se|shte te ubiya|da ti eba maikata', 'NEGATIVE', NOW()
+            WHERE NOT EXISTS (
+                SELECT 1 FROM moderation_training_data WHERE content LIKE '%samooubi%'
+            );
+        </sql>
+    </changeSet>
+</databaseChangeLog>

@@ -1,5 +1,6 @@
 package com.example.aimoderation.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 
 import lombok.NoArgsConstructor;
@@ -19,6 +20,7 @@ public class User {
     @Column(unique = true, nullable = false)
     private String username;
 
+    @JsonIgnore
     @Column(nullable = false)
     private String password;
 
@@ -28,15 +30,19 @@ public class User {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    @JsonIgnore
     @Column(name = "failed_login_attempts", nullable = false)
     private int failedLoginAttempts = 0;
 
+    @JsonIgnore
     @Column(name = "locked_until")
     private Instant lockedUntil;
 
+    @JsonIgnore
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
+    @JsonIgnore
     @Column(name = "last_login_ip", length = 64)
     private String lastLoginIp;
 

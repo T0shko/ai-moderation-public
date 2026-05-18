@@ -87,4 +87,7 @@
     <include file="db/changelog/007-fix-admin-password.xml"/>
     <include file="db/changelog/008-user-security-columns.xml"/>
     <include file="db/changelog/009-create-refresh-tokens-table.xml"/>
+    <include file="db/changelog/010-seed-moderation-training-phrases.xml"/>
+    <include file="db/changelog/011-comment-image-url.xml"/>
+    <include file="db/changelog/012-drop-image-hash-unique.xml"/>
 </databaseChangeLog>

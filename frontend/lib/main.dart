@@ -79,23 +79,7 @@ class _AuthGateState extends State<_AuthGate> {
 
   Future<List<String>?> _resolveSession() async {
     final api = Provider.of<ApiService>(context, listen: false);
-    final token = await api.getToken();
-    if (token == null || token.isEmpty) return null;
-
-    try {
-      final profile = await api.me();
-      final roles = (profile['roles'] as List?)
-              ?.map((e) => e.toString())
-              .toList(growable: false) ??
-          const <String>[];
-      return roles;
-    } on AuthException {
-      return null;
-    } catch (_) {
-      // Network down: fall back to cached roles so the UI still loads;
-      // protected calls will surface a connection error on their own.
-      return await api.getRoles();
-    }
+    return api.restoreSession();
   }
 
   Widget _splash() => const Scaffold(
